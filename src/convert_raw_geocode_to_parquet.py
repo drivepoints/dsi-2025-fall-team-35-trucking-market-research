@@ -8,9 +8,6 @@ and converts it into a dataframe. This is a slightly complex process
 because the results we receive from the census are not predictable. If an
 address does not match, we get three "cells" back, the id, the address, and
 "not found," for example.
-
-
-
 """
 
 import csv
