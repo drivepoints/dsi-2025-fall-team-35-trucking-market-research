@@ -113,20 +113,12 @@ def match_batch(batch: pl.DataFrame):
     return results
 
 
-# --- Run batched loop ---
-all_matches = []
 for i in tqdm(range(0, df.height, BATCH_SIZE)):
-    batch_results = match_batch(df.slice(i, BATCH_SIZE))
-    all_matches.extend(batch_results)
-
-results_df = df.with_columns(
-    [
-        pl.Series("best_match", [m[0] for m in all_matches]),
-        pl.Series("confidence", [m[1] for m in all_matches], dtype=pl.Float64),
-        pl.Series("data_axle_row_index", [m[2] for m in all_matches]),
-    ]
-)
-
-results_df.write_parquet("./data/data_axle_matched_addresses.parquet")
-
-print("written")
+    b = df.slice(i, BATCH_SIZE)
+    match_results = match_batch(b)
+    b = b.with_columns(
+        pl.Series("best_match", [m[0] for m in match_results]),
+        pl.Series("confidence", [m[1] for m in match_results], dtype=pl.Float64),
+        pl.Series("data_axle_row_index", [m[2] for m in match_results]),
+            )
+    b.write_parquet(f"./data/data_axle_matched_addresses/{i}_data.parquet")
