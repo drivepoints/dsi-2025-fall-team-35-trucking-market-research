@@ -17,13 +17,7 @@ BATCH_SIZE = 1000
 
 df = pl.read_parquet("./data/geocoded_addresses.parquet")
 
-df = df[:100]
-
-print("load geo data")
-
 daxle_df_raw = pl.scan_parquet("./data/data-axle.parquet")
-
-print("Load data axle")
 
 
 def calculate_bucket(f: float) -> int:
@@ -31,30 +25,31 @@ def calculate_bucket(f: float) -> int:
 
 
 daxle_df = (
-    daxle_df_raw.select(
-        "latitude",
-        "longitude",
-        match_address=pl.concat_str(
-            [
-                pl.col("address_line_1"),
-                pl.col("city"),
-                pl.col("state"),
-                pl.col("zipcode"),
-            ],
-            separator=", ",
-        ),
+    (
+        daxle_df_raw.select(
+            "latitude",
+            "longitude",
+            match_address=pl.concat_str(
+                [
+                    pl.col("address_line_1"),
+                    pl.col("city"),
+                    pl.col("state"),
+                    pl.col("zipcode"),
+                ],
+                separator=", ",
+            ),
+        )
+        .with_columns(
+            lat_bucket=(pl.col("latitude") / BUCKET_SIZE).floor().cast(pl.Int32),
+            lon_bucket=(pl.col("longitude") / BUCKET_SIZE).floor().cast(pl.Int32),
+        )
+        .with_columns(
+            (pl.col("lat_bucket") * 100_000 + pl.col("lon_bucket")).alias("bucket_id")
+        )
     )
-    .with_columns(
-        lat_bucket=(calculate_bucket(pl.col("latitude"))),
-        lon_bucket=(calculate_bucket(pl.col("longitude"))),
-    )
-    .with_columns(
-        (pl.col("lat_bucket") * 100_000 + pl.col("lon_bucket")).alias("bucket_id")
-    )
+    .with_row_index(name="data_axle_row_index")
+    .collect()
 )
-
-
-print("data axle done")
 
 
 def neighbor_ids(lat_bucket: int, lon_bucket: int) -> list[int]:
@@ -70,12 +65,7 @@ def get_candidates(lat: int, lon: int) -> pl.DataFrame:
     lon_bucket = calculate_bucket(lon)
     bucket_ids = neighbor_ids(lat_bucket, lon_bucket)
 
-    return daxle_df.filter(pl.col("bucket_id").is_in(bucket_ids)).collect(
-        streaming=True
-    )
-
-
-print("Define match batch")
+    return daxle_df.filter(pl.col("bucket_id").is_in(bucket_ids))
 
 
 def match_batch(batch: pl.DataFrame):
@@ -85,7 +75,7 @@ def match_batch(batch: pl.DataFrame):
         lat, lon, addr = (truck["lat"], truck["lon"], truck["matched_address"])
 
         if lat is None or lon is None or addr is None:
-            results.append((None, 0))
+            results.append((None, 0, -1))
             continue
 
         candidates = get_candidates(lat, lon)
@@ -97,34 +87,46 @@ def match_batch(batch: pl.DataFrame):
         )
 
         if candidates.is_empty():
-            results.append((None, 0))
+            results.append((None, 0, -1))
             continue
 
         # Fuzzy match on addresses
         choices = candidates["match_address"].drop_nulls().to_list()
         if not choices:
-            results.append((None, 0))
+            results.append((None, 0, -1))
             continue
 
-        match, score, _ = process.extractOne(
-            addr, choices, scorer=fuzz.token_sort_ratio
+        matches = process.extract(
+            addr,
+            choices,
+            scorer=fuzz.token_sort_ratio,
+            limit=1,
         )
-        results.append((match, score))
+
+        if matches:
+            match, score, match_idx = matches[0]
+            match_id = candidates["data_axle_row_index"][match_idx]
+            results.append((match, score, match_id))
+        else:
+            results.append((None, 0.0, None))
 
     return results
 
 
 # --- Run batched loop ---
 all_matches = []
-for i in range(0, df.height, BATCH_SIZE):
+for i in tqdm(range(0, df.height, BATCH_SIZE)):
     batch_results = match_batch(df.slice(i, BATCH_SIZE))
     all_matches.extend(batch_results)
 
 results_df = df.with_columns(
     [
         pl.Series("best_match", [m[0] for m in all_matches]),
-        pl.Series("confidence", [m[1] for m in all_matches]),
+        pl.Series("confidence", [m[1] for m in all_matches], dtype=pl.Float64),
+        pl.Series("data_axle_row_index", [m[2] for m in all_matches]),
     ]
 )
 
-results_df.head()
+results_df.write_parquet("./data/data_axle_matched_addresses.parquet")
+
+print("written")
