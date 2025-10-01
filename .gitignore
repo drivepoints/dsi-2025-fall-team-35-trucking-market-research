@@ -1,1 +1,4 @@
-tmp/
+.ipynb_checkpoints/
+*.parquet
+tmp
+data/*.txt
