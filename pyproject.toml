@@ -18,6 +18,10 @@ geopandas = "^1.1.1"
 cartopy = "^0.25.0"
 matplotlib = "^3.10.6"
 pyarrow = "^21.0.0"
+polars-strsim = "^0.2.5"
+altair = "^5.5.0"
+vegafusion = {version = ">=1.5.0", extras = ["embed"]}
+vl-convert-python = ">=1.6.0"
 
 
 [build-system]
