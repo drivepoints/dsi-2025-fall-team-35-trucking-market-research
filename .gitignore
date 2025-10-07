@@ -2,4 +2,4 @@
 *.parquet
 tmp
 data/*.txt
-
+.env
