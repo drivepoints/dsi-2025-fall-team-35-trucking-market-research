@@ -4,3 +4,4 @@ ipykernel
 dotenv
 openai
 pyarrow
+sodapy

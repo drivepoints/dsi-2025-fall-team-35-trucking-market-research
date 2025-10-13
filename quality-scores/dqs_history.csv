@@ -1,0 +1,4 @@
+timestamp,run_date,record_count,completeness,structural_validity,semantic_validity,combined_validity,timeliness,final_dqs,parquet_file,llm_sample_size
+20251013_115227,2025-10-13 11:54:44,2091643,1.0,0.5832,0.7,0.6416,0.2656,0.7097,transportation_data_20251013_115227.parquet,10
+20251013_115227,2025-10-13 13:53:09,2091643,0.9244,0.9518,0.72,0.8359,0.2539,0.7549,transportation_data_20251013_115227.parquet,10
+20251013_115227,2025-10-13 13:57:54,2091643,0.9244,0.9518,0.75,0.8509,0.2539,0.7609,transportation_data_20251013_135544.parquet,10
