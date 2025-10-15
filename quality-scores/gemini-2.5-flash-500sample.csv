@@ -1,0 +1,86 @@
+4457575,0.0,Missing physical address, 0 mileage with 1 power unit, DBA name "ACE HARWDARE" implies a different business.
+1107199,0.5,Zero mileage reported for an active carrier with power unit and driver.
+1082692,0.0,Inconsistent number of drivers (1) for power units (2), zero mileage reported, and outdated MCS-150 date.
+4379708,0.0,Extremely low mileage (1 mile) for an operating carrier.
+3288005,0.0,Inconsistent number of drivers (1) for power units (2), low mileage per unit (1174 miles/year), and inconsistent carrier operation type (C but authorized for hire).
+3332784,0.5,Inconsistent carrier operation type (C but authorized for hire).
+2420291,0.0,Inconsistent carrier operation type (A but private only).
+4301807,0.0,Zero power units and drivers but listed as an authorized for-hire carrier; inconsistent carrier operation type (A but private only).
+1891345,1.0,Fully valid and consistent for a farm operation.
+4430365,0.5,Zero mileage reported for an operating carrier with a power unit and driver.
+2656506,1.0,Minor inconsistency with fewer drivers than power units, but plausible for a school district's bus fleet.
+1869429,1.0,Fully valid, realistic, and consistent.
+2182380,0.0,Extremely low mileage (1 mile) and zero recent mileage for an operating carrier, outdated mileage year.
+4021922,0.0,Inconsistent carrier operation type (A but private only).
+2902068,0.0,Inconsistent number of drivers (1) for power units (2), low mileage per unit (6000 miles/year), and inconsistent carrier operation type (A but private only).
+1214020,0.5,Zero recent mileage and outdated mileage data.
+3442101,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+4388246,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (A but private only).
+4162939,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+3848924,0.0,Extremely low mileage (1 mile) and zero recent mileage for an operating carrier.
+2558757,0.0,Inconsistent number of drivers (1) for power units (2) and zero mileage reported.
+2687134,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+4431340,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (A but private only).
+2986228,1.0,Fully valid, realistic, and consistent for a private restaurant carrier.
+2705271,0.0,Missing number of power units, zero mileage, and inconsistent carrier operation type (C but authorized for hire).
+2272419,0.5,Zero mileage reported for an active carrier.
+3288430,1.0,Fully valid, realistic, and consistent.
+3201457,0.5,Zero recent mileage and outdated mileage data.
+3115805,0.0,Inconsistent carrier operation type (A but private only).
+1436379,0.0,Inconsistent number of drivers (1) for power units (2) and low mileage per unit (21500 miles/year).
+1463636,0.5,Zero mileage reported and missing MCS-150 mileage year.
+4090462,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+1526619,0.5,Low mileage (2100 miles/year) for an operating carrier.
+2091577,0.0,Extremely low mileage per unit (454 miles/year) for 11 power units and inconsistent number of drivers (7) for power units (11).
+3983160,0.0,Extremely high mileage (650000 miles/year or 170000 miles/year) for a single power unit.
+3722814,0.5,Inconsistent number of drivers (1) for power units (2), though plausible for farm use.
+1947242,0.0,Minor format issue in physical street address, zero recent mileage, and inconsistent activity flags (C carrier with all false activity flags).
+3542125,0.5,Inconsistent number of drivers (1) for power units (2).
+2485110,0.0,Inconsistent number of drivers (1) for power units (2) and zero mileage reported.
+1699104,0.0,Extremely low mileage (1 mile) for an operating carrier.
+2325207,0.0,Missing telephone, fax, and email addresses, zero mileage, and inconsistent carrier operation type (C but authorized for hire).
+3693346,0.0,Zero power units and mileage reported for an active carrier with a driver.
+4431259,0.5,Zero mileage reported for an operating carrier.
+1525358,0.0,Zero recent mileage and inconsistent carrier operation type (C but authorized for hire).
+3524438,0.5,Low mileage (15000 miles/year) for an operating carrier.
+3941150,0.0,Low mileage (14000 miles/year) and inconsistent carrier operation type (A but private only).
+4137288,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized/exempt for hire).
+2935130,1.0,Fully valid, realistic, and consistent.
+4135896,0.0,Extremely low mileage (1 mile) and inconsistent carrier operation type (C but authorized for hire and private passenger business).
+2299161,0.0,Extremely low mileage per unit (800 miles/year) for 5 power units, inconsistent number of drivers (1) for power units (5), and inconsistent carrier operation type (A but private only).
+4333355,0.5,Zero mileage reported for an operating carrier.
+2273655,0.0,Low mileage per unit (17000 miles/year) for 5 power units and inconsistent number of drivers (4) for power units (5).
+3811776,0.0,Extremely low mileage (200 miles/year) and inconsistent carrier operation type (C but authorized for hire and private property).
+4265954,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire and private property).
+4351112,0.0,Extremely low mileage (1000 miles/year) and inconsistent carrier operation type (C but authorized for hire).
+1489113,0.0,Zero recent mileage and inconsistent carrier operation type (C but authorized for hire).
+3007311,0.5,Inconsistent number of drivers (9) for power units (10).
+2797620,0.5,Outdated mileage data.
+2924060,0.0,Extremely low mileage (150 miles/year) and inconsistent carrier operation type (C but authorized for hire).
+3188411,0.0,Extremely low mileage (1 mile), zero recent mileage, and inconsistent carrier operation type (C but authorized for hire).
+4210621,0.0,Inconsistent number of drivers (1) for power units (3) and zero mileage reported.
+3680138,0.5,Very high mileage (203497 miles/year) for a single power unit.
+3923619,1.0,Fully valid, realistic, and consistent.
+3816268,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+4234363,0.5,Zero mileage reported for an operating carrier.
+2304793,0.0,Inconsistent number of drivers (1) for power units (2), zero mileage, and inconsistent carrier operation type (B but private only).
+1941150,0.5,Low mileage (5287 miles/year) for an operating carrier.
+3854981,0.0,Extremely low mileage (100 miles/year) for an operating carrier.
+3510481,0.5,Low mileage (10000 miles/year) for an operating carrier.
+2040879,0.5,Inconsistent carrier operation type (C but authorized for hire).
+2737440,0.0,Zero mileage, missing email address, and inconsistent carrier operation type (C but authorized for hire).
+2434233,0.5,Zero mileage reported and outdated data.
+2261019,0.5,Zero mileage reported and outdated data.
+2844751,0.0,Low mileage per unit (5000 miles/year) for 12 power units and zero recent mileage.
+4060056,0.5,Zero mileage reported for an operating carrier.
+1852391,1.0,Fully valid and consistent.
+3936194,0.5,Low mileage (18053.5 miles/year) for an operating carrier.
+3435248,0.0,Extremely low mileage (500 miles/year), zero recent mileage, and inconsistent carrier operation type (C but authorized for hire).
+2169132,0.0,Inconsistent number of drivers (1) for power units (2) and inconsistent carrier operation type (A but private only).
+1763028,0.5,Zero mileage reported and outdated data.
+1899193,1.0,Fully valid, realistic, and consistent.
+1855928,0.0,Zero mileage reported, outdated data, and missing email address.
+4306152,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (C but authorized for hire).
+2711696,0.0,Zero mileage, missing email address, and inconsistent carrier operation type (C but authorized for hire).
+4329738,0.0,Zero mileage reported for an operating carrier and inconsistent carrier operation type (A but private only).
+42
