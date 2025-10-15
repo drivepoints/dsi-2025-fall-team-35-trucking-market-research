@@ -5,3 +5,6 @@ dotenv
 openai
 pyarrow
 sodapy
+google-auth
+google-cloud-aiplatform
+google-generativeai
