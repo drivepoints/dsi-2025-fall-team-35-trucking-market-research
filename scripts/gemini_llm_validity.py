@@ -16,7 +16,7 @@ SAMPLESIZE = 10
 SEED = 99
 MODEL = "gemini-2.5-flash-lite"
 
-OUTPUTDIR = "../quality-scores"
+OUTPUTDIR = "../llm/output/"
 OUTPUT_SAMPLE = os.path.join(OUTPUTDIR, "pilot-gemini-validity-sample-records.csv")
 OUTPUT_RESULTS = os.path.join(OUTPUTDIR, "pilot-gemini-validity-sample-results.csv")
 

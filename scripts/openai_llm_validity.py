@@ -14,7 +14,7 @@ from openai import OpenAI
 # =============================
 INPUT_FILE = "../data/transportation_data_20250917_222245.parquet"
 SAMPLE_SIZE = 10
-OUTPUT_FILE = "./quality-scores/validity_sample_results.csv"
+OUTPUT_FILE = "../llm/output/validity_sample_results.csv"
 MODEL = "o3-mini"  # Adjust as needed
 SEED = 27  # For reproducibility
 
