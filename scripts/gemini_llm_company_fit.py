@@ -12,7 +12,7 @@ API_KEY = os.getenv("GOOGLE_API_KEY")
 INPUTFILE = "../data/transportation_data_20251013_135544.parquet"
 SAMPLESIZE = 100
 SEED = 20
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.5-pro"
 
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M")
 OUTPUTDIR = "../llm/output/"
@@ -55,62 +55,90 @@ def main():
 
     # System prompt
     systemprompt = f"""
-You are evaluating trucking companies for DrivePoints insurance targeting. Score each company 0.0-1.0 based on how well they match our ideal customer profile.
+ou are classifying U.S. trucking companies for DrivePoints Insurance.
+Decide whether each company is GOOD or BAD. Make a balanced, evidence-based decision.
 
-## Context
-- Target: Active Class 6 trucking (last-mile, furniture delivery), 1-50 trucks, priority states (CA, TX, AZ, UT, NV)
-- Avoid: Defunct companies, self-insured giants (FedEx/UPS), non-trucking businesses, stale data
-- Date context: {date_context}
+{date_context}
 
-## Scoring Method (4 dimensions, 25 points each → divide by 100):
+Do NOT default to BAD when uncertain. Only classify as BAD if a clear exclusion applies.
+If multiple positive indicators are present and no exclusions, classify as GOOD.
 
-### 1. Business Legitimacy (0-25)
-Is this a real trucking company?
-- 25: Professional name, clear trucking operation
-- 15: Acceptable (personal name for sole proprietor OK)
-- 5: Questionable (typos, unclear business type)
-- 0: Placeholder text ("ABC Company"), non-trucking (aquariums, construction-only)
+---
 
-### 2. Operational Plausibility (0-25)
-Do the numbers make sense?
-- Miles/truck/year: Normal = 45K-120K (flag if >200K or <5K)
-- Driver/truck ratio: Normal = 0.8-1.5 (flag extremes like 2 drivers/50 trucks)
-- 25: All metrics reasonable and consistent
-- 15: Minor issues
-- 5: Major implausibility (500K miles/truck)
-- 0: Multiple impossible values
+### HARD EXCLUSIONS (always BAD)
+If any of the following are true, classify as BAD and list all reasons in key_concerns:
+- carrier_operation = "A" (Interstate)
+- hm_flag = TRUE
+- phy_state ∈ {{NJ, NY, PR, AK, HI}}
+- us_mail = TRUE
+- pc_flag = TRUE
+- Defunct, inactive, or missing operational data
+- Not a trucking company (e.g., construction-only, farming-only, towing-only)
+- Government, school, or public agency
 
-### 3. Data Freshness (0-25)
-Is the company active?
-- mcs150_date recency: 2023-2025 ideal, pre-2020 concerning, pre-2015 major red flag
-- recent_mileage: Should be >0 and align with fleet size
-- 25: Updated last 2 years, active mileage
-- 15: Updated 2-4 years ago
-- 5: Stale (>5 years)
-- 0: Ancient (>10 years) or zero activity
+---
 
-### 4. Target Fit (0-25)
-Does this match our ideal customer?
-- Priority state (CA/TX/AZ/UT/NV): +10
-- Fleet size 1-50 trucks (sweet spot 3-20): +10
-- Authorized for hire or private (not government): +5
-- 25: Perfect match
-- 15: Meets 2-3 criteria
-- 5: Meets 1 criterion
-- 0: Wrong profile entirely
+### POSITIVE INDICATORS (GOOD)
+If most of the following hold and no exclusions apply, classify as GOOD:
+- authorized_for_hire = TRUE (or Private with delivery/logistics operations implied by data)
+- Operates in non-excluded states (priority but not required: CA, TX, AZ, UT, NV)
+- Fleet size 1–50 (ideal 3–20)
+- Recent activity (MCS-150 date 2023–2025 and/or active mileage)
+- Metrics plausibility (e.g., miles per truck/year ~45K–120K; driver/truck ratio 0.8–1.5)
+- Legitimate trucking identity (plausible name; consistent data across fields)
 
-**Final Score = Total Points / 100**
+When evidence is mixed and no hard exclusions apply, decide proportionally—do not default to BAD.
 
-## Output (JSON only):
+---
+
+### DECISION PLAN (internal)
+1) Check hard exclusions. If any → BAD.
+2) Otherwise evaluate legitimacy, freshness, fleet size, and metric plausibility.
+3) Multiple positive indicators → GOOD.
+4) If mixed, weigh recency + fleet range + plausibility; do NOT default to BAD.
+5) Output a concise one-sentence rationale.
+
+Do not reveal this plan; only output the required JSON.
+
+---
+
+### OUTPUT FORMAT
+Return ONLY valid JSON (no extra text, no markdown):
+
 {{
   "dot_number": "<DOT>",
-  "company_quality_score": <0.0-1.0>,
-  "legitimacy_score": <0-25>,
-  "metrics_score": <0-25>,
-  "freshness_score": <0-25>,
-  "target_fit_score": <0-25>,
-  "key_concerns": ["<concern 1>", "<concern 2>"],
-  "reasoning_summary": "<2-3 sentences>"
+  "company_name": "<legal_name or dba_name>",
+  "classification": "GOOD" or "BAD",
+  "key_concerns": ["<concern1>", "<concern2>", "..."],
+  "reasoning_summary": "<short, clear rationale>"
+}}
+
+---
+
+### FEW-SHOT CALIBRATION (no cargo fields)
+
+# Example GOOD
+Input:
+carrier_operation="B", hm_flag=FALSE, phy_state="TX", authorized_for_hire=TRUE, fleet_size=12, mcs150_date="2024-05-10", annual_mileage=900000, trucks=10, drivers=11
+Expected JSON:
+{{
+  "dot_number": "1234567",
+  "company_name": "Lone Star Local Freight LLC",
+  "classification": "GOOD",
+  "key_concerns": [],
+  "reasoning_summary": "Active for-hire carrier in a non-excluded state with small fleet, recent filing, and plausible mileage/driver ratios; no exclusions."
+}}
+
+# Example BAD
+Input:
+carrier_operation="A", hm_flag=TRUE, phy_state="NJ", authorized_for_hire=TRUE, fleet_size=8, mcs150_date="2023-11-02"
+Expected JSON:
+{{
+  "dot_number": "9876543",
+  "company_name": "Garden State Transport",
+  "classification": "BAD",
+  "key_concerns": ["Interstate operation", "Hazardous materials", "Excluded state NJ"],
+  "reasoning_summary": "Fails multiple exclusions: interstate hazmat in excluded state."
 }}
 """
 
@@ -120,38 +148,43 @@ Does this match our ideal customer?
     
     # Process each record
     results = []
-    for idx, rec in sampledf.iterrows():
+    save_interval = 10  # save every 10 records
+    for i, (idx, rec) in enumerate(sampledf.iterrows(), start=1):
         record_dict = rec.to_dict()
         record_json = json.dumps(record_dict, indent=2, default=str)
-        
         userprompt = f"Evaluate this record:\n{record_json}"
         prompt = systemprompt + "\n\n" + userprompt
-        
-        print(f"Processing DOT {rec[dot_col]}...")
-        
+
+        print(f"Processing DOT {rec[dot_col]} ({i}/{len(sampledf)})...")
+
         try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt
-            )
-            
+            response = client.models.generate_content(model=MODEL, contents=prompt)
             responsetext = response.text.strip()
-            
-            # Clean markdown
+
+            # Clean markdown artifacts
             clean_text = re.sub(r"^```(json)?\s*", "", responsetext)
             clean_text = re.sub(r"```$", "", clean_text)
-            
+
             result = json.loads(clean_text)
             results.append(result)
-            
+
         except Exception as e:
             print(f"Error processing DOT {rec[dot_col]}: {e}")
             results.append({"dot_number": str(rec[dot_col]), "error": str(e)[:200]})
-    
-    # Save results
+
+        # ---- incremental save ----
+        if i % save_interval == 0:
+            temp_out = os.path.join(
+                OUTPUTDIR,
+                f"company-fit-results_{MODEL}_{TIMESTAMP}_partial.csv"
+            )
+            pd.DataFrame(results).to_csv(temp_out, index=False)
+            print(f"✅ Saved progress after {i} records → {temp_out}")
+
+    # Final save
     results_df = pd.DataFrame(results)
     results_df.to_csv(OUTPUT_RESULTS, index=False)
-    print(f"\nResults saved to {OUTPUT_RESULTS}")
+    print(f"\n✅ Final results saved to {OUTPUT_RESULTS}")
     print(f"Successfully processed {len(results_df)} records")
 
 if __name__ == "__main__":

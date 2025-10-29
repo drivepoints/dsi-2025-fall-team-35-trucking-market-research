@@ -1,0 +1,34 @@
+(.venv) jareddonohue@Mac scripts % python compare_llm_to_ground_truth.py 
+Detected binary LLM output with classification column.
+Matched 100 records
+After dropping missing: 100 records remain
+
+Found 28 binary mismatches out of 100 total records.
+
+--- Sample Mismatches ---
+ dot_number expert_label llm_label human_binary llm_binary
+    1261235        GREAT       BAD         good        bad
+    1985989         GOOD       BAD         good        bad
+    2734147         GOOD       BAD         good        bad
+    4328741         GOOD       BAD         good        bad
+    3492952          BAD      GOOD          bad       good
+    1595005         GOOD       BAD         good        bad
+    1926033          BAD      GOOD          bad       good
+    2439684        GREAT       BAD         good        bad
+    2365413         GOOD       BAD         good        bad
+    3407529        GREAT       BAD         good        bad
+
+--- RESULTS ---
+Binary Accuracy (GOOD/GREAT vs BAD/OK): 72.00% ±8.80%
+Sample Size: 100
+              precision    recall  f1-score   support
+
+         bad       0.78      0.88      0.83        76
+        good       0.36      0.21      0.26        24
+
+    accuracy                           0.72       100
+   macro avg       0.57      0.54      0.55       100
+weighted avg       0.68      0.72      0.69       100
+
+Balanced accuracy: 0.5449561403508771
+

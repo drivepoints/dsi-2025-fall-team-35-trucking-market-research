@@ -8,3 +8,4 @@ sodapy
 google-cloud-aiplatform
 matplotlib
 seaborn
+scikit-learn
