@@ -9,3 +9,5 @@ google-cloud-aiplatform
 matplotlib
 seaborn
 scikit-learn
+streamlit
+plotly

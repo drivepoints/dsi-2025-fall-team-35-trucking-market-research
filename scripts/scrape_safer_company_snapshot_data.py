@@ -7,8 +7,8 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 # --------------- CONFIG ---------------
-INPUT_CSV   = "../data/100-sample-dots.csv"
-OUTPUT_CSV  = "../data/enriched_100_safer_snapshot.csv"
+INPUT_CSV   = "../data/sample-for-annotation-400.csv"
+OUTPUT_CSV  = "../data/enriched_400_safer_snapshot.csv"
 
 CONCURRENCY     = 5       # be polite to FMCSA
 RATE_PER_SEC    = 2        # 2 POSTs/sec total
@@ -144,6 +144,7 @@ async def worker(name, q, limiter, session, results_lock):
 # ---------------- MAIN ----------------
 async def main():
     df = pd.read_csv(INPUT_CSV, dtype=str)
+    df.columns = df.columns.str.lower()
     dots = df["dot_number"].dropna().astype(str).tolist()
 
     limiter = RateLimiter(RATE_PER_SEC)
