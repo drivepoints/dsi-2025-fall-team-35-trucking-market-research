@@ -3,3 +3,5 @@
 tmp
 data/*.txt
 .env
+data/
+llm/output/
