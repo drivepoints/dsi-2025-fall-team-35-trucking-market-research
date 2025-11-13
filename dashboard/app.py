@@ -1,3 +1,6 @@
+# TO RUN THIS DASHBOARD:
+# > streamlit run app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,7 +17,7 @@ st.markdown(
     "Company Fit Score is randomly generated for prototype."
 )
 
-DATA_PATH = "./data/transportation_data_20251013_135544.parquet"
+DATA_PATH = "../data/transportation_data_20251013_135544.parquet" # or any version of the USDOT FMCSA Census dataset.
 
 @st.cache_data
 def load_data():
