@@ -25,6 +25,13 @@ vl-convert-python = ">=1.6.0"
 dnspython = "^2.8.0"
 plotly = "^6.3.1"
 seaborn = "^0.13.2"
+dotenv = "^0.9.9"
+openai = "^2.8.1"
+sodapy = "^2.2.0"
+google-cloud-aiplatform = "^1.127.0"
+ipykernel = "^7.1.0"
+scikit-learn = "^1.7.2"
+streamlit = "^1.51.0"
 
 
 [build-system]
