@@ -1,7 +1,10 @@
+!data/current_census_data_version.txt
 .ipynb_checkpoints/
+__pycache__
 *.parquet
 tmp
 data/*.txt
 .env
 data/
 llm/output/
+
