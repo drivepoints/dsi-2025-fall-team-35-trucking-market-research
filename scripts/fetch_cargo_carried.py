@@ -151,7 +151,9 @@ async def main_async():
         print("Checkpoint indicates work is already complete.")
         return
 
-    remaining_dots = all_dots[start_index:start_index + 1000]
+    
+    remaining_dots = all_dots[start_index:start_index+1000] # run for first 1000 recrods
+    # remaining_dots = all_dots[start_index:] #run for all 2M records
     remaining_total = len(remaining_dots)
     print(f"Resuming from index {start_index} (remaining: {remaining_total:,})")
 
