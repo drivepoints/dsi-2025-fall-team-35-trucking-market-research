@@ -7,4 +7,4 @@ data/*.txt
 .env
 data/
 llm/output/
-
+scripts/fetch.log
