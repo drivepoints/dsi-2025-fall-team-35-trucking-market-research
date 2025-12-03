@@ -58,8 +58,7 @@ st.markdown(compact_table_css, unsafe_allow_html=True)
 
 st.title("🚚 DrivePoints Potential Customer Dashboard")
 st.markdown(
-    "Preview of transportation companies, ranked, with easy access to contacts and state trends. "
-    "Company Fit Score is randomly generated for prototype."
+    "Preview of transportation companies, ranked, with easy access to contacts and state trends."
 )
 
 DATA_PATH = "master_file.parquet"
@@ -79,7 +78,7 @@ def load_data(path: str) -> pd.DataFrame:
     - Ensures DOT numbers are stored as strings.
     - Expands 'carrier_operation' codes into readable labels.
     - Normalizes year-like columns so they display cleanly as year strings.
-    - Adds a prototype 'company_fit_score' and sorts by that score.
+    - Maps the ML model score ('ml_score') into 'company_fit_score' and sorts by that score.
     - Reorders columns so key identification/contact fields appear first.
     - Merges in any previously saved prospect status information from
       STATUS_PATH, if that file exists.
@@ -92,6 +91,11 @@ def load_data(path: str) -> pd.DataFrame:
     # Ensure DOT numbers are strings to preserve leading zeros and allow safe joins
     if "dot_number" in df.columns:
         df["dot_number"] = df["dot_number"].astype(str)
+
+    # Normalize DQS (data quality score) if present
+    # Stored as a numeric column in [0, 1] with non-numeric values coerced to NaN
+    if "dqs" in df.columns:
+        df["dqs"] = pd.to_numeric(df["dqs"], errors="coerce")
 
     # Map 'carrier_operation' codes to descriptive text where available
     if "carrier_operation" in df.columns:
@@ -112,12 +116,14 @@ def load_data(path: str) -> pd.DataFrame:
                 .astype(str)
             )
 
-    # Create a deterministic prototype "fit score" to rank companies
-    np.random.seed(42)
-    df["company_fit_score"] = np.round(
-        np.random.uniform(0.0, 1.0, size=len(df)),
-        3,
-    )
+    # Map ML model score to 'company_fit_score' used throughout the app
+    if "ml_score" in df.columns:
+        df["company_fit_score"] = pd.to_numeric(
+            df["ml_score"], errors="coerce"
+        )
+    else:
+        # Fallback: if ml_score is missing, keep the column so downstream code doesn't break
+        df["company_fit_score"] = np.nan
 
     # Move key identification and contact columns to the front
     display_columns = [
@@ -551,78 +557,88 @@ if "phy_state" in df.columns:
     # ------------------------------------------------------------------
     # Reset button: restore all filters to consistent default values
     # ------------------------------------------------------------------
-    if st.sidebar.button("Reset filters"):
+    def reset_all_filters():
+        ss = st.session_state
+
         # Company fit score filter
-        st.session_state["min_fit_score"] = 0.0
+        ss["min_fit_score"] = 0.0
+
+        # Data quality score (DQS) filter
+        ss["min_dqs"] = 0.4
 
         # Geographic filters
-        st.session_state["phy_state_selection"] = []
-        st.session_state["west_of_mississippi"] = False
-        st.session_state["exclude_ak_hi_ny_nj"] = False
-        st.session_state["verified_addresses_only"] = False
-        st.session_state["county_filter"] = []
+        ss["phy_state_selection"] = []
+        ss["west_of_mississippi"] = False
+        ss["exclude_ak_hi_ny_nj"] = False
+        ss["verified_addresses_only"] = False
+        ss["county_filter"] = []
 
         # Fleet size filters
         if mileage_col in df.columns:
-            st.session_state["mileage_min"] = miles_min
-            st.session_state["mileage_max"] = miles_ui_max
+            ss["mileage_min"] = miles_min
+            ss["mileage_max"] = miles_ui_max
 
         if drivers_col in df.columns:
-            st.session_state["min_drivers"] = max(1, drivers_min)
-            st.session_state["max_drivers"] = drivers_ui_max
+            ss["min_drivers"] = max(1, drivers_min)
+            ss["max_drivers"] = drivers_ui_max
 
         if units_col in df.columns:
-            st.session_state["min_units"] = max(1, units_min)
-            st.session_state["max_units"] = units_ui_max
+            ss["min_units"] = max(1, units_min)
+            ss["max_units"] = units_ui_max
 
         # Default filters for country, mail, and hazmat flags
         if default_country is not None:
-            st.session_state["phy_country_selection"] = [default_country]
+            ss["phy_country_selection"] = [default_country]
 
         if default_mail is not None:
-            st.session_state["us_mail_filter"] = default_mail
+            ss["us_mail_filter"] = default_mail
 
         if default_hm is not None:
-            st.session_state["hm_flag_filter"] = default_hm
+            ss["hm_flag_filter"] = default_hm
 
-        st.session_state["exclude_territories"] = True
+        ss["exclude_territories"] = True
 
         # Outlier capping flags
-        st.session_state["cap_mileage_outliers"] = True
-        st.session_state["cap_driver_outliers"] = True
-        st.session_state["cap_unit_outliers"] = True
+        ss["cap_mileage_outliers"] = True
+        ss["cap_driver_outliers"] = True
+        ss["cap_unit_outliers"] = True
 
-        # Operation type filters
-        st.session_state["operation_flags"] = []
-        st.session_state["carrier_type_filter"] = []
+        # Operation type filters (including cargo filter)
+        ss["operation_flags"] = []
+        ss["carrier_type_filter"] = []
+        ss["cargo_categorized_include"] = []
+        ss["cargo_categorized_exclude"] = []
 
         # Insurance filters
-        st.session_state["has_insurance_info"] = False
+        ss["has_insurance_info"] = False
         if filings_min is not None and filings_max is not None:
-            st.session_state["filings_range"] = (filings_min, filings_max)
+            ss["filings_range"] = (filings_min, filings_max)
         if insurers_min is not None and insurers_max is not None:
-            st.session_state["insurers_range"] = (insurers_min, insurers_max)
+            ss["insurers_range"] = (insurers_min, insurers_max)
         if gap_min is not None and gap_max is not None:
-            st.session_state["median_gap_min"] = gap_min
-            st.session_state["median_gap_max"] = gap_max
+            ss["median_gap_min"] = gap_min
+            ss["median_gap_max"] = gap_max
 
         # Accident filters
-        st.session_state["has_accident_info"] = False
+        ss["has_accident_info"] = False
         if total_crashes_max is not None:
-            st.session_state["max_total_crashes"] = total_crashes_max
+            ss["max_total_crashes"] = total_crashes_max
         if at_fault_crashes_max is not None:
-            st.session_state["max_total_at_fault"] = at_fault_crashes_max
+            ss["max_total_at_fault"] = at_fault_crashes_max
         if pct_at_fault_max is not None:
-            st.session_state["max_pct_at_fault"] = pct_at_fault_max * 100.0
+            ss["max_pct_at_fault"] = pct_at_fault_max * 100.0
         if safety_index_min is not None:
-            st.session_state["min_safety_index"] = safety_index_min
+            ss["min_safety_index"] = safety_index_min
 
         # Prospect contactability filter
-        st.session_state["ready_to_contact"] = False
+        ss["ready_to_contact"] = False
 
         # Clear search fields used in the company list section
-        st.session_state["dot_search"] = ""
-        st.session_state["name_search"] = ""
+        ss["dot_search"] = ""
+        ss["name_search"] = ""
+
+    st.sidebar.button("Reset filters", on_click=reset_all_filters)
+
 
     # ------------------------------------------------------------------
     # Company fit score filter (applies to the entire dataset)
@@ -631,7 +647,6 @@ if "phy_state" in df.columns:
         "Minimum Company Fit Score",
         min_value=0.0,
         max_value=1.0,
-        value=st.session_state.get("min_fit_score", 0.0),
         step=0.01,
         key="min_fit_score",
         help="Use this to focus on higher-ranked prospects.",
@@ -729,11 +744,16 @@ if "phy_state" in df.columns:
     with st.sidebar.expander("Fleet Size Filters", expanded=False):
         # Power units filter
         if units_col in df.columns:
+            # Initialize defaults once, if they aren't set yet
+            if "min_units" not in st.session_state:
+                st.session_state["min_units"] = max(1, units_min)
+            if "max_units" not in st.session_state:
+                st.session_state["max_units"] = units_ui_max
+
             min_units_val = st.number_input(
                 "Min power units",
                 min_value=units_min,
-                max_value=units_ui_max,
-                value=st.session_state.get("min_units", max(1, units_min)),
+                max_value=units_max,
                 step=1,
                 key="min_units",
                 help="Minimum number of power units operated by the carrier.",
@@ -741,26 +761,35 @@ if "phy_state" in df.columns:
             max_units_val = st.number_input(
                 "Max power units",
                 min_value=units_min,
-                max_value=units_ui_max,
-                value=st.session_state.get("max_units", units_ui_max),
+                max_value=units_max,
                 step=1,
                 key="max_units",
-                help="Maximum number (outliers excluded) of power units operated by the carrier.",
+                help=(
+                    "Maximum number (outliers excluded) of power units operated by the carrier. "
+                    f"True maximum in dataset: {units_max:,}."
+                ),
             )
 
-            u_low = min(min_units_val, max_units_val)
-            u_high = max(min_units_val, max_units_val)
+
+            # Use the values as entered. If the minimum is greater than the
+            # maximum, no rows should pass this filter.
+            u_low = min_units_val
+            u_high = max_units_val
 
             s_all = get_numeric_series(df, units_col)
             if s_all is not None:
-                mask &= s_all.between(u_low, u_high)
+                if u_low <= u_high:
+                    mask &= s_all.between(u_low, u_high)
+                else:
+                    # Invalid range (min > max) → no rows match.
+                    mask &= False
 
         # Driver count filter
         if drivers_col in df.columns:
             min_drivers_val = st.number_input(
                 "Min drivers",
                 min_value=drivers_min,
-                max_value=drivers_ui_max,
+                max_value=drivers_max,
                 value=st.session_state.get("min_drivers", max(1, drivers_min)),
                 step=1,
                 key="min_drivers",
@@ -769,26 +798,33 @@ if "phy_state" in df.columns:
             max_drivers_val = st.number_input(
                 "Max drivers",
                 min_value=drivers_min,
-                max_value=drivers_ui_max,
+                max_value=drivers_max,
                 value=st.session_state.get("max_drivers", drivers_ui_max),
                 step=1,
                 key="max_drivers",
-                help="Maximum number (outliers excluded) of drivers employed by the carrier.",
+                help=(
+                    "Maximum number (outliers excluded) of drivers employed by the carrier. "
+                    f"True maximum in dataset: {drivers_max:,}."
+                ),
             )
 
-            d_low = min(min_drivers_val, max_drivers_val)
-            d_high = max(min_drivers_val, max_drivers_val)
+            # Use the values as entered; if min > max, treat as an empty range.
+            d_low = min_drivers_val
+            d_high = max_drivers_val
 
             s_all = get_numeric_series(df, drivers_col)
             if s_all is not None:
-                mask &= s_all.between(d_low, d_high)
+                if d_low <= d_high:
+                    mask &= s_all.between(d_low, d_high)
+                else:
+                    mask &= False
 
         # Recent mileage filter
         if mileage_col in df.columns:
             min_miles_input = st.number_input(
                 "Min recent mileage",
                 min_value=miles_min,
-                max_value=miles_ui_max,
+                max_value=miles_max,
                 value=st.session_state.get("mileage_min", miles_min),
                 step=1000,
                 key="mileage_min",
@@ -798,19 +834,26 @@ if "phy_state" in df.columns:
             max_miles_input = st.number_input(
                 "Max recent mileage",
                 min_value=miles_min,
-                max_value=miles_ui_max,
+                max_value=miles_max,
                 value=st.session_state.get("mileage_max", miles_ui_max),
                 step=1000,
                 key="mileage_max",
-                help="Upper bound (outliers excluded) for the carrier's most recently reported mileage.",
+                help=(
+                    "Upper bound (outliers excluded) for the carrier's most recently reported mileage. "
+                    f"True maximum in dataset: {miles_max:,}."
+                ),
             )
 
-            low = min(min_miles_input, max_miles_input)
-            high = max(min_miles_input, max_miles_input)
+            # Use the values as entered; if min > max, no rows should match.
+            low = min_miles_input
+            high = max_miles_input
 
             s_all = get_numeric_series(df, mileage_col)
             if s_all is not None:
-                mask &= s_all.between(low, high)
+                if low <= high:
+                    mask &= s_all.between(low, high)
+                else:
+                    mask &= False
 
     # ------------------------------------------------------------------
     # Operation-type filters (flag columns + carrier_operation)
@@ -853,6 +896,104 @@ if "phy_state" in df.columns:
             )
             if selected_carrier_types:
                 mask &= df["carrier_operation"].isin(selected_carrier_types)
+
+        # Cargo Carried filters using pipe "|" separator
+        if "cargo_categorized" in df.columns:
+
+            # Predetermined FMCSA-style categories
+            ALL_CARGO_CATEGORIES = [
+                "General Freight",
+                "Household Goods",
+                "Metal: sheets, coils, rolls",
+                "Motor Vehicles",
+                "Drive/Tow away",
+                "Logs, Poles, Beams, Lumber",
+                "Building Materials",
+                "Mobile Homes",
+                "Machinery, Large Objects",
+                "Fresh Produce",
+                "Liquids/Gases",
+                "Intermodal Cont.",
+                "Passengers",
+                "Oilfield Equipment",
+                "Livestock",
+                "Grain, Feed, Hay",
+                "Coal/Coke",
+                "Meat",
+                "Garbage/Refuse",
+                "US Mail",
+                "Chemicals",
+                "Commodities Dry Bulk",
+                "Refrigerated Food",
+                "Beverages",
+                "Paper Products",
+                "Utilities",
+                "Agricultural/Farm Supplies",
+                "Construction",
+                "Water Well",
+                "Landscaping/Lawn Care",
+                "Dry Foods (Non-Refrigerated)",
+                "Roads/Paving",
+                "Recyclables",
+                "Medical",
+                "Other",
+                "Null",
+            ]
+
+            cargo_series = df["cargo_categorized"].dropna().astype(str)
+
+            # Detect which categories actually appear in the DF using exact membership
+            present_categories = set()
+            for entry in cargo_series:
+                parts = [p.strip() for p in entry.split("|") if p.strip()]
+                for p in parts:
+                    if p in ALL_CARGO_CATEGORIES:
+                        present_categories.add(p)
+
+            # Sort alphabetically but push Other and Null to the bottom
+            def sort_key(cat):
+                if cat == "Other": return (1, cat)
+                if cat == "Null": return (2, cat)
+                return (0, cat.lower())
+
+            cargo_options = sorted(present_categories, key=sort_key)
+
+            # ----------- INCLUDE FILTER (ANY of) -----------
+            selected_include = st.multiselect(
+                "Cargo Carried (ANY of – INCLUDE)",
+                options=cargo_options,
+                key="cargo_categorized_include",
+                help="Keep companies carrying ANY of these categories."
+            )
+
+            # ----------- EXCLUDE FILTER (NONE of) -----------
+            selected_exclude = st.multiselect(
+                "Cargo Carried (NONE of – EXCLUDE)",
+                options=cargo_options,
+                key="cargo_categorized_exclude",
+                help="Exclude companies carrying ANY of these categories."
+            )
+
+            # FAST lookup sets
+            include_set = set(selected_include)
+            exclude_set = set(selected_exclude)
+
+            def parse_categories(val):
+                if pd.isna(val):
+                    return set()
+                return {p.strip() for p in str(val).split("|") if p.strip()}
+
+            # Apply INCLUDE (must contain at least one)
+            if include_set:
+                mask &= df["cargo_categorized"].apply(
+                    lambda v: len(parse_categories(v) & include_set) > 0
+                )
+
+            # Apply EXCLUDE (must contain none)
+            if exclude_set:
+                mask &= df["cargo_categorized"].apply(
+                    lambda v: len(parse_categories(v) & exclude_set) == 0
+                )
 
     # ------------------------------------------------------------------
     # Prospective Clients filters (moved here)
@@ -1097,6 +1238,29 @@ if "phy_state" in df.columns:
     with st.sidebar.expander("Default Filters", expanded=False):
         territories_to_exclude = {"PR", "GU", "AS", "MP", "VI"}
 
+        # -----------------------------
+        # Data Quality Score (DQS) filter
+        # -----------------------------
+        if "dqs" in df.columns:
+            min_dqs = st.slider(
+                "Minimum Data Quality Score (DQS)",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(st.session_state.get("min_dqs", 0.4)),
+                step=0.01,
+                key="min_dqs",
+                help=(
+                    "DQS is a data quality score based on the completeness "
+                    "(lack of NULL values), validity (how accurate the data "
+                    "appears to be), and freshness (how recently it has been "
+                    "updated)."
+                ),
+            )
+
+            s_dqs = get_numeric_series(df, "dqs")
+            if s_dqs is not None:
+                mask &= s_dqs >= float(min_dqs)
+
         exclude_territories = st.checkbox(
             "Exclude US territories (PR, GU, AS, MP, VI)",
             key="exclude_territories",
@@ -1139,28 +1303,6 @@ if "phy_state" in df.columns:
                 mask &= df["hm_flag"] == "Y"
 
         # Optional outlier caps based on 99th percentile values
-        if miles_outlier_cap is not None and mileage_col in df.columns:
-            cap_miles = st.checkbox(
-                "Exclude extreme mileage outliers (top 1%)",
-                key="cap_mileage_outliers",
-                help="Drop the highest 1% of recent mileage values to avoid extreme outliers distorting the view.",
-            )
-            if cap_miles:
-                s_all = get_numeric_series(df, mileage_col)
-                if s_all is not None:
-                    mask &= s_all.isna() | (s_all <= miles_outlier_cap)
-
-        if drivers_outlier_cap is not None and drivers_col in df.columns:
-            cap_drivers = st.checkbox(
-                "Exclude extreme driver count outliers (top 1%)",
-                key="cap_driver_outliers",
-                help="Drop the largest fleets by driver count (top 1%) to focus on more typical companies.",
-            )
-            if cap_drivers:
-                s_all = get_numeric_series(df, drivers_col)
-                if s_all is not None:
-                    mask &= s_all.isna() | (s_all <= drivers_outlier_cap)
-
         if units_outlier_cap is not None and units_col in df.columns:
             cap_units = st.checkbox(
                 "Exclude extreme power unit outliers (top 1%)",
@@ -1172,10 +1314,32 @@ if "phy_state" in df.columns:
                 if s_all is not None:
                     mask &= s_all.isna() | (s_all <= units_outlier_cap)
 
+        if drivers_outlier_cap is not None and drivers_col in df.columns:
+            cap_drivers = st.checkbox(
+                "Exclude extreme driver count outliers (top 1%)",
+                key="cap_driver_outliers",
+                help="Drop the largest fleets by driver count (top 1%) to focus on more typical companies.",
+            )
+            if cap_drivers:
+                s_all = get_numeric_series(df, drivers_col)
+                if s_all is not None:
+                    mask &= s_all.isna() | (s_all <= drivers_outlier_cap)
+                    
+        if miles_outlier_cap is not None and mileage_col in df.columns:
+            cap_miles = st.checkbox(
+                "Exclude extreme mileage outliers (top 1%)",
+                key="cap_mileage_outliers",
+                help="Drop the highest 1% of recent mileage values to avoid extreme outliers distorting the view.",
+            )
+            if cap_miles:
+                s_all = get_numeric_series(df, mileage_col)
+                if s_all is not None:
+                    mask &= s_all.isna() | (s_all <= miles_outlier_cap)
+
     # ------------------------------------------------------------------
     # Apply the combined mask once to create filtered_df
     # ------------------------------------------------------------------
-    filtered_df = df[mask]
+    filtered_df = df[mask].copy()
 else:
     # If the dataset does not contain 'phy_state', use the full DataFrame
     filtered_df = df.copy()
@@ -1239,7 +1403,8 @@ if "phy_state" in df.columns:
 
     # Aggregations at the state level
     agg_dict = {"CompanyCount": ("phy_state", "size")}
-
+    if "company_fit_score" in source_for_map.columns:
+        agg_dict["avg_company_fit_score"] = ("company_fit_score", "mean")
     if "recent_mileage" in source_for_map.columns:
         agg_dict["avg_recent_mileage"] = ("recent_mileage", "mean")
     if "driver_total" in source_for_map.columns:
@@ -1248,6 +1413,8 @@ if "phy_state" in df.columns:
         agg_dict["avg_power_units"] = ("nbr_power_unit", "mean")
     if "num_filings" in source_for_map.columns:
         agg_dict["InsuranceCount"] = ("num_filings", lambda s: s.notna().sum())
+    if "dqs" in source_for_map.columns:
+        agg_dict["avg_dqs"] = ("dqs", "mean")
 
     if len(source_for_map) > 0:
         state_agg = (
@@ -1298,17 +1465,36 @@ if "phy_state" in df.columns:
     metric_options = {
         "Company Count": ("CompanyCount", "Companies"),
     }
-    if "avg_recent_mileage" in state_agg.columns:
-        metric_options["Avg Recent Mileage"] = ("avg_recent_mileage", "Avg Recent Mileage")
-    if "avg_drivers" in state_agg.columns:
-        metric_options["Avg Drivers"] = ("avg_drivers", "Avg Drivers")
-    if "avg_power_units" in state_agg.columns:
-        metric_options["Avg Power Units"] = ("avg_power_units", "Avg Power Units")
-    if "InsuranceCount" in state_agg.columns:
-        metric_options["Companies with Insurance History"] = (
-            "InsuranceCount",
-            "Companies with Insurance History",
+
+    # Average Company Fit Score
+    if "avg_company_fit_score" in state_agg.columns:
+        metric_options["Average Company Fit Score"] = (
+            "avg_company_fit_score",
+            "Average Company Fit Score",
         )
+
+    if "avg_recent_mileage" in state_agg.columns:
+        metric_options["Average Recent Mileage"] = (
+            "avg_recent_mileage",
+            "Average Recent Mileage",
+        )
+    if "avg_drivers" in state_agg.columns:
+        metric_options["Average Drivers"] = (
+            "avg_drivers",
+            "Average Drivers",
+        )
+    if "avg_power_units" in state_agg.columns:
+        metric_options["Average Power Units"] = (
+            "avg_power_units",
+            "Average Power Units",
+        )
+        
+    if "avg_dqs" in state_agg.columns:
+        metric_options["Average Data Quality Score (DQS)"] = (
+            "avg_dqs",
+            "Average Data Quality Score (DQS)",
+        )
+
     if "InsurancePct" in state_agg.columns:
         metric_options["Percent with Insurance History"] = (
             "InsurancePct",
@@ -1350,25 +1536,54 @@ if "phy_state" in df.columns:
         else:
             map_df[metric_col] = np.nan
 
-        # A state is considered "active" if it has a metric value after filters.
-        map_df["is_active"] = map_df[metric_col].notna()
+        # Determine which states are explicitly excluded by the geographic
+        # filters (state selection, West-of-Mississippi, exclude AK/HI/NY/NJ).
+        geo_allowed_states = set(map_states)
+
+        if west_only:
+            geo_allowed_states &= west_states
+
+        if selected_states:
+            geo_allowed_states &= set(selected_states)
+
+        if exclude_special:
+            geo_allowed_states -= {"AK", "HI", "NJ", "NY"}
+
+        map_df["geo_allowed"] = map_df["State"].isin(geo_allowed_states)
+
+        # Metric used for coloring:
+        # - States that are still allowed by the geographic filters but have
+        #   no remaining companies get a value of 0 so they appear in the
+        #   normal color scale.
+        # - States that are geo-filtered-out get NaN and are drawn in gray.
+        map_df["MetricForMap"] = np.where(
+            map_df["geo_allowed"],
+            map_df[metric_col],
+            np.nan,
+        )
+
+        # For geo-allowed states with no data, treat the metric as zero.
+        map_df.loc[
+            map_df["geo_allowed"] & map_df["MetricForMap"].isna(),
+            "MetricForMap",
+        ] = 0.0
 
         # Pre-format hover text:
-        #   - Active states: show the metric and formatted value.
-        #   - Inactive states: show "Filtered Out".
+        #   - Explicitly excluded states: "Filtered Out"
+        #   - Included states: show the metric value (0 is allowed)
         def _format_hover(row):
-            if row["is_active"] and pd.notna(row[metric_col]):
-                if metric_col in ["CompanyCount", "InsuranceCount"]:
-                    return f"{metric_title}: {row[metric_col]:,.0f}"
-                else:
-                    return f"{metric_title}: {row[metric_col]:,.2f}"
-            else:
+            if not row["geo_allowed"]:
                 return "Filtered Out"
+            val = row["MetricForMap"]
+            if metric_col in ["CompanyCount", "InsuranceCount"]:
+                return f"{metric_title}: {val:,.0f}"
+            else:
+                return f"{metric_title}: {val:,.2f}"
 
         map_df["HoverText"] = map_df.apply(_format_hover, axis=1)
 
-        inactive_df = map_df[~map_df["is_active"]]
-        active_df = map_df[map_df["is_active"]]
+        inactive_df = map_df[~map_df["geo_allowed"]]
+        active_df = map_df[map_df["geo_allowed"]]
 
         fig = go.Figure()
 
@@ -1390,7 +1605,7 @@ if "phy_state" in df.columns:
 
         # Top layer: states that remain after filters (Blues, darker border)
         if not active_df.empty:
-            active_z = active_df[metric_col].astype(float)
+            active_z = active_df["MetricForMap"].astype(float)
 
             fig.add_trace(
                 go.Choropleth(
@@ -1505,6 +1720,12 @@ if "phy_state" in df.columns:
                                     .size()
                                     .rename("MetricValue")
                                 )
+                            elif metric_col == "avg_company_fit_score" and "company_fit_score" in state_df.columns:
+                                metric_series = (
+                                    by_county["company_fit_score"]
+                                    .mean()
+                                    .rename("MetricValue")
+                                )
 
                             elif metric_col == "avg_recent_mileage" and "recent_mileage" in state_df.columns:
                                 metric_series = (
@@ -1548,6 +1769,13 @@ if "phy_state" in df.columns:
                                     name="MetricValue",
                                 )
 
+                            elif metric_col == "avg_dqs" and "dqs" in state_df.columns:
+                                metric_series = (
+                                    by_county["dqs"]
+                                    .mean()
+                                    .rename("MetricValue")
+                                )
+
                         # Attach metric values (if any) to the full list of counties
                         if metric_series is not None:
                             metric_df = (
@@ -1560,31 +1788,56 @@ if "phy_state" in df.columns:
                                 how="left",
                             )
                         else:
-                            # No metric for this selection -> all counties appear filtered out
+                            # No metric for this selection -> start with all NaN
                             county_counts["MetricValue"] = np.nan
 
-                        # Mark which counties still have data after filters
-                        county_counts["is_active"] = county_counts["MetricValue"].notna()
+                        # Determine which counties are explicitly excluded by the
+                        # geography filters (county multiselect). If no counties
+                        # are selected, all counties in the state are considered
+                        # geo-allowed.
+                        if selected_counties:
+                            allowed_names = set(selected_counties)
+                            county_counts["geo_allowed"] = county_counts["county_name"].isin(allowed_names)
+                        else:
+                            county_counts["geo_allowed"] = True
+
+                        # Metric used for coloring:
+                        # - Counties that are still allowed by the geographic filters
+                        #   but have no remaining companies get a value of 0 so they
+                        #   appear in the normal color scale.
+                        # - Counties that are geo-filtered-out get NaN and are drawn
+                        #   in gray.
+                        county_counts["MetricForMap"] = np.where(
+                            county_counts["geo_allowed"],
+                            county_counts["MetricValue"],
+                            np.nan,
+                        )
+
+                        county_counts.loc[
+                            county_counts["geo_allowed"] & county_counts["MetricForMap"].isna(),
+                            "MetricForMap",
+                        ] = 0.0
 
                         # Build human-readable hover text
                         def _format_county_hover(row):
-                            if row["is_active"] and pd.notna(row["MetricValue"]):
-                                if metric_col in ["CompanyCount", "InsuranceCount"]:
-                                    return f"{metric_title}: {row['MetricValue']:,.0f}"
-                                else:
-                                    return f"{metric_title}: {row['MetricValue']:,.2f}"
-                            else:
+                            if not row["geo_allowed"]:
                                 return "Filtered Out"
+                            val = row["MetricForMap"]
+                            if metric_col in ["CompanyCount", "InsuranceCount"]:
+                                return f"{metric_title}: {val:,.0f}"
+                            else:
+                                return f"{metric_title}: {val:,.2f}"
 
                         county_counts["HoverText"] = county_counts.apply(
                             _format_county_hover,
                             axis=1,
                         )
 
-                        inactive_df = county_counts[~county_counts["is_active"]]
-                        active_df = county_counts[county_counts["is_active"]]
+                        inactive_df = county_counts[~county_counts["geo_allowed"]]
+                        active_df = county_counts[county_counts["geo_allowed"]]
 
                         counties_geojson = load_state_counties_geojson(state_fips)
+
 
                         fig_counties = go.Figure()
 
@@ -1619,7 +1872,7 @@ if "phy_state" in df.columns:
                         # (Blues scale, darker border, metric value in hover)
                         # ------------------------------------------------------
                         if not active_df.empty:
-                            active_z = active_df["MetricValue"].astype(float)
+                            active_z = active_df["MetricForMap"].astype(float)
 
                             fig_counties.add_trace(
                                 go.Choropleth(
@@ -1847,6 +2100,15 @@ def plot_segmented_metric(
     )
     seg_counts["Percent"] = seg_counts["Count"] / seg_counts["Count"].sum() * 100.0
 
+    # Drop leading empty segments so we don't show bars for ranges that are
+    # completely excluded by the current filters (e.g., 1–4 drivers when
+    # the filter is set to min 5).
+    nonzero_indices = np.where(seg_counts["Count"].to_numpy() > 0)[0]
+    if len(nonzero_indices) > 0:
+        first_idx = nonzero_indices[0]
+        last_idx = nonzero_indices[-1]
+        seg_counts = seg_counts.iloc[first_idx:last_idx + 1].copy()
+
     fig = px.bar(
         seg_counts,
         x="Segment",
@@ -1883,8 +2145,38 @@ def plot_segmented_metric(
 # ------------------------------------------------------------
 # Segmented Power Units Distribution
 # ------------------------------------------------------------
-power_bins = [0, 1, 2, 3, 4, 5, 10, np.inf]
-power_labels = ["1", "2", "3", "4", "5", "6–10", "10+"]
+# Always show 7 buckets, and re-bin dynamically as the user increases
+# the minimum power units filter. The categories slide upward so that
+# we never waste bars on ranges that are completely filtered out.
+min_units_current = st.session_state.get("min_units", 1)
+
+if min_units_current <= 1:
+    # Default view:
+    # 1, 2, 3, 4, 5, 6–9, 10+
+    power_bins = [0, 1, 2, 3, 4, 5, 9, np.inf]
+    power_labels = ["1", "2", "3", "4", "5", "6–9", "10+"]
+elif min_units_current == 2:
+    # Min = 2:
+    # 2, 3, 4, 5, 6, 7–9, 10+
+    power_bins = [0, 2, 3, 4, 5, 6, 9, np.inf]
+    power_labels = ["2", "3", "4", "5", "6", "7–9", "10+"]
+elif min_units_current == 3:
+    # Min = 3:
+    # 3, 4, 5, 6, 7, 8–9, 10+
+    power_bins = [0, 3, 4, 5, 6, 7, 9, np.inf]
+    power_labels = ["3", "4", "5", "6", "7", "8–9", "10+"]
+else:
+    # From min >= 4 onward, use a sliding window of 6 single-value
+    # buckets plus a "catch-all" 7th bucket:
+    #
+    # Example: min = 4  ->  4, 5, 6, 7, 8, 9, 10+
+    #          min = 5  ->  5, 6, 7, 8, 9, 10, 11+
+    #          min = 6  ->  6, 7, 8, 9, 10, 11, 12+
+    #
+    start = int(min_units_current)
+    edges = [start + i for i in range(0, 6)]  # start, start+1, ... start+5
+    power_bins = [0] + edges + [np.inf]
+    power_labels = [str(start + i) for i in range(0, 6)] + [f"{start + 6}+"]
 
 plot_segmented_metric(
     filtered_df,
@@ -1899,8 +2191,37 @@ plot_segmented_metric(
 # ------------------------------------------------------------
 # Segmented Drivers Distribution
 # ------------------------------------------------------------
-driver_bins = [0, 1, 2, 3, 4, 5, 10, np.inf]
-driver_labels = ["1", "2", "3", "4", "5", "6-10", "10+"]
+# Same idea as power units: always show 7 buckets that slide upward as
+# the minimum drivers filter increases.
+min_drivers_current = st.session_state.get("min_drivers", 1)
+
+if min_drivers_current <= 1:
+    # Default view:
+    # 1, 2, 3, 4, 5, 6–9, 10+
+    driver_bins = [0, 1, 2, 3, 4, 5, 9, np.inf]
+    driver_labels = ["1", "2", "3", "4", "5", "6–9", "10+"]
+elif min_drivers_current == 2:
+    # Min = 2:
+    # 2, 3, 4, 5, 6, 7–9, 10+
+    driver_bins = [0, 2, 3, 4, 5, 6, 9, np.inf]
+    driver_labels = ["2", "3", "4", "5", "6", "7–9", "10+"]
+elif min_drivers_current == 3:
+    # Min = 3:
+    # 3, 4, 5, 6, 7, 8–9, 10+
+    driver_bins = [0, 3, 4, 5, 6, 7, 9, np.inf]
+    driver_labels = ["3", "4", "5", "6", "7", "8–9", "10+"]
+else:
+    # From min >= 4 onward, slide a 6-value window plus a final "N+"
+    # bucket, analogous to the power units distribution.
+    #
+    # Example: min = 4  ->  4, 5, 6, 7, 8, 9, 10+
+    #          min = 5  ->  5, 6, 7, 8, 9, 10, 11+
+    #          min = 6  ->  6, 7, 8, 9, 10, 11, 12+
+    #
+    start = int(min_drivers_current)
+    edges = [start + i for i in range(0, 6)]  # start, start+1, ... start+5
+    driver_bins = [0] + edges + [np.inf]
+    driver_labels = [str(start + i) for i in range(0, 6)] + [f"{start + 6}+"]
 
 plot_segmented_metric(
     filtered_df,
@@ -1912,11 +2233,105 @@ plot_segmented_metric(
     container=col_drivers,
 )
 
+
 # ------------------------------------------------------------
 # Segmented Recent Mileage Distribution
 # ------------------------------------------------------------
-miles_bins = [0, 10_000, 50_000, 100_000, 250_000, 500_000, np.inf]
-miles_labels = ["1-10k", "10k–50k", "50k–100k", "100k–250k", "250k-500k", "500k+"]
+# Start with fixed buckets:
+#   1–1k, 1k–10k, 10k–50k, 50k–100k, 100k–250k, 250k–500k, 500k+
+# As the minimum mileage filter increases and entire buckets are
+# filtered out, we drop those bins from the left and grow the
+# upper end with 250k-wide ranges, but only switch to fully
+# generic 250k bands once the minimum reaches 250k.
+min_miles_current = st.session_state.get("mileage_min", miles_min)
+
+if min_miles_current < 1_000:
+    # Base case: 7 buckets
+    miles_bins = [0, 1_000, 10_000, 50_000, 100_000, 250_000, 500_000, np.inf]
+    miles_labels = [
+        "1–1k",
+        "1k–10k",
+        "10k–50k",
+        "50k–100k",
+        "100k–250k",
+        "250k–500k",
+        "500k+",
+    ]
+elif min_miles_current < 10_000:
+    # Drop 1–1k, add 500k–750k and 750k+
+    miles_bins = [1_000, 10_000, 50_000, 100_000, 250_000, 500_000, 750_000, np.inf]
+    miles_labels = [
+        "1k–10k",
+        "10k–50k",
+        "50k–100k",
+        "100k–250k",
+        "250k–500k",
+        "500k–750k",
+        "750k+",
+    ]
+elif min_miles_current < 50_000:
+    # Drop 1k–10k as well; add 750k–1M and 1M+
+    miles_bins = [10_000, 50_000, 100_000, 250_000, 500_000, 750_000, 1_000_000, np.inf]
+    miles_labels = [
+        "10k–50k",
+        "50k–100k",
+        "100k–250k",
+        "250k–500k",
+        "500k–750k",
+        "750k–1M",
+        "1M+",
+    ]
+elif min_miles_current < 100_000:
+    # Drop 10k–50k; keep 50k–100k & 100k–250k, expand high end
+    miles_bins = [50_000, 100_000, 250_000, 500_000, 750_000, 1_000_000, 1_250_000, np.inf]
+    miles_labels = [
+        "50k–100k",
+        "100k–250k",
+        "250k–500k",
+        "500k–750k",
+        "750k–1M",
+        "1M–1.25M",
+        "1.25M+",
+    ]
+elif min_miles_current < 250_000:
+    # Drop 50k–100k once min >= 100k; keep 100k–250k then 250k+
+    miles_bins = [100_000, 250_000, 500_000, 750_000, 1_000_000, 1_250_000, 1_500_000, np.inf]
+    miles_labels = [
+        "100k–250k",
+        "250k–500k",
+        "500k–750k",
+        "750k–1M",
+        "1M–1.25M",
+        "1.25M–1.5M",
+        "1.5M+",
+    ]
+else:
+    # For higher minimums (>= 250k), continue the pattern generically:
+    # 7 consecutive 250k-wide bands starting at the nearest lower
+    # multiple of 250k, plus a final open-ended bucket.
+    step = 250_000
+    start = int((min_miles_current // step) * step)
+
+    # Construct 7 edges: [start, start+step, ..., start+6*step]
+    edges = [start + step * i for i in range(0, 7)]
+    miles_bins = edges + [np.inf]
+
+    def _fmt(v: int) -> str:
+        if v >= 1_000_000:
+            x = v / 1_000_000
+            if x.is_integer():
+                return f"{int(x)}M"
+            return f"{x:.2f}M".rstrip("0").rstrip(".")
+        else:
+            return f"{v // 1_000}k"
+
+    miles_labels = []
+    for i in range(0, 6):
+        lo = edges[i]
+        hi = edges[i + 1]
+        miles_labels.append(f"{_fmt(lo)}–{_fmt(hi)}")
+    last_lo = edges[6]
+    miles_labels.append(f"{_fmt(last_lo)}+")
 
 plot_segmented_metric(
     filtered_df,
@@ -2014,6 +2429,8 @@ full_rename = {
     "mailing_zip": "ZIP Code (Mailing)",
     "mailing_country": "Country (Mailing)",
     "fax": "Fax Number",
+    "cargo_carried": "Cargo Carried",
+    "cargo_categorized": "Cargo Categories",
     "mcs150_date": "MCS-150 Filing Date",
     "mcs150_mileage": "MCS-150 Mileage",
     "mcs150_mileage_year": "MCS-150 Year",
@@ -2106,6 +2523,8 @@ base_display_cols = [
     "mailing_state",
     "mailing_zip",
     "fax",
+    "cargo_carried",
+    "cargo_categorized",
     "recent_mileage",
     "nbr_power_unit",
     "driver_total",
@@ -2161,13 +2580,15 @@ else:
         )
 
         export_n = st.number_input(
-            label="",
+            label="Number of top companies to download",  # non-empty for accessibility
+            label_visibility="collapsed",                # hides the built-in label
             min_value=1,
             max_value=max_export,
             value=default_export,
             step=50,
             key="export_n",
         )
+
 
     # Take the first N rows of the filtered and searched table
     full_export_df = table_df.head(export_n).copy()
@@ -2251,6 +2672,7 @@ else:
         and "Prospect Status" in edited_preview.columns
         and "dot_number" in table_df.columns
     ):
+        # Map edited preview rows back to their DOT numbers
         dots_for_rows = table_df.loc[edited_preview.index, "dot_number"].astype(str)
         new_status_map = dict(
             zip(dots_for_rows, edited_preview["Prospect Status"])
@@ -2261,16 +2683,22 @@ else:
         status_map = st.session_state["prospect_status_map"]
 
         if "dot_number" in df.columns:
-            df["dot_number"] = df["dot_number"].astype(str)
-            df["prospect_status"] = df["dot_number"].map(status_map).fillna("Not Contacted")
+            df.loc[:, "dot_number"] = df["dot_number"].astype(str)
+            df.loc[:, "prospect_status"] = (
+                df["dot_number"].map(status_map).fillna("Not Contacted")
+            )
 
         if "dot_number" in filtered_df.columns:
-            filtered_df["dot_number"] = filtered_df["dot_number"].astype(str)
-            filtered_df["prospect_status"] = filtered_df["dot_number"].map(status_map).fillna("Not Contacted")
+            filtered_df.loc[:, "dot_number"] = filtered_df["dot_number"].astype(str)
+            filtered_df.loc[:, "prospect_status"] = (
+                filtered_df["dot_number"].map(status_map).fillna("Not Contacted")
+            )
 
         if "dot_number" in table_df.columns:
-            table_df["dot_number"] = table_df["dot_number"].astype(str)
-            table_df["prospect_status"] = table_df["dot_number"].map(status_map).fillna("Not Contacted")
+            table_df.loc[:, "dot_number"] = table_df["dot_number"].astype(str)
+            table_df.loc[:, "prospect_status"] = (
+                table_df["dot_number"].map(status_map).fillna("Not Contacted")
+            )
 
         # ------------------------------------------------------
         # Commit button: persist prospect_status to STATUS_PATH
@@ -2295,10 +2723,10 @@ else:
                 "These will be reloaded automatically next time."
             )
 
-        # Always show a summary message under the button if there has been at least one commit
-        if "last_commit_count" in st.session_state:
-            status_filename = os.path.basename(STATUS_PATH)
-            st.caption(
-                f"Last commit saved {st.session_state['last_commit_count']:,} records "
-                f"to `{status_filename}`."
-            )
+    # Always show a summary message under the button if there has been at least one commit
+    if "last_commit_count" in st.session_state:
+        status_filename = os.path.basename(STATUS_PATH)
+        st.caption(
+            f"Last commit saved {st.session_state['last_commit_count']:,} records "
+            f"to `{status_filename}`."
+        )
