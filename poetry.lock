@@ -1783,6 +1783,23 @@ files = [
 ]
 
 [[package]]
+name = "joypy"
+version = "0.2.6"
+description = "Joyplots in python"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "joypy-0.2.6-py2.py3-none-any.whl", hash = "sha256:fffe882e8281e56e08b374a3148436cb448562ba39e4d566204c7e8ee2caddab"},
+    {file = "joypy-0.2.6.tar.gz", hash = "sha256:099da2d6c7d81b5eccc957bd9446831f565ba42d5abbab0fa92b81892449522e"},
+]
+
+[package.dependencies]
+matplotlib = "*"
+numpy = ">=1.16.5"
+pandas = ">=0.20.0"
+scipy = ">=0.11.0"
+
+[[package]]
 name = "json5"
 version = "0.12.1"
 description = "A Python implementation of the JSON5 data format."
@@ -4981,4 +4998,4 @@ scikit-learn = ["scikit-learn"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "3cf410498c1ab88c5c8a8a81f5a9dd3caa679b24fcfd8275bfa832a5a59cb090"
+content-hash = "501e55f0b22d881efae71682537e8532b67d3506053d9f3cec5455344ffa7b77"
