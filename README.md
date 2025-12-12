@@ -13,9 +13,14 @@ Ben Sullivan, Jared Donohue, Moacir P. de Sá Pereira, Jialin Wen
 
 ## How to Run the Dashboard
 
-1. Run `pip install -r requirements.txt` to download required package dependencies.
-2. Download `master_file.parquet` ([Google Drive Link](https://drive.google.com/file/d/1BSIEEkaXgfTXaR7jr1GxFc8DCOe702yW/view?usp=drive_link)) into the root of this directory.
-3. Run `streamlit run app.py` to view and interact with the market research dashboard tool.
+1. Download `master_file.parquet` ([Google Drive Link](https://drive.google.com/file/d/1BSIEEkaXgfTXaR7jr1GxFc8DCOe702yW/view?usp=drive_link)) into the root of this directory.
+2. Execute the shell script:
+
+```bash
+bash run.sh
+```
+
+This will create a virtual environment using [uv](https://docs.astral.sh/uv/) if available, otherwise generic Python `venv`. It will install the requirements indicated in `requirements.txt` into the environment and then run the [Streamlit](https://streamlit.io/) dashboard app.
 
 ## Data Sources
 
