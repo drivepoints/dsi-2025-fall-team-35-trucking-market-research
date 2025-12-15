@@ -1,7 +1,5 @@
 import os
-
-DATA_DIR = "../data"
-VERSION_FILE = os.path.join(DATA_DIR, "current_census_data_version.txt")
+from dashboard.config import DATA_DIR, VERSION_FILE
 
 
 def get_current_version():
@@ -15,7 +13,6 @@ def get_current_version():
 
 def set_current_version(version: str):
     """Write version number to current_version.txt."""
-    os.makedirs(DATA_DIR, exist_ok=True)
     with open(VERSION_FILE, "w") as f:
         f.write(str(version))
 

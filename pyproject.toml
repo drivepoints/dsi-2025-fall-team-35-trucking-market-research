@@ -39,3 +39,6 @@ joypy = "^0.2.6"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pylint.main]
+init-hook = "import sys; sys.path.insert(0, '.')"

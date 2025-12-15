@@ -1,31 +1,172 @@
+"""
+Preprocessing module that runs in a standalone fashion to prepare data.
+
+This module is called as a subprocess from the Streamlit app to perform
+data extraction, transformation, and loading (ETL) tasks. It handles
+downloading Census data, transforming it, and preparing it for analysis.
+"""
+
 import sys
-import tempfile
-import os
-import polars as pl
-import requests
+from dashboard import etl
+from dashboard.utils import data_path_for_version
 
 
 def preprocess(version):
-    print(f"Building dataset version {version}...")
-    out_path = f"../data/sms_census_data_version_{version}.parquet"
-    url = f"https://data.transportation.gov/api/archival.csv?id=kjg3-diqy&version={version}&method=export"
+    """
+    Preprocess the dataset for the given version.
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
-        csv_path = tmp.name
-        print(f"Downloading CSV to temporary file: {csv_path}")
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        for chunk in response.iter_content(chunk_size=8192):
-            tmp.write(chunk)
+    Args:
+        version (str): The version of the dataset to process.
 
-    print("Reading CSV into DataFrame...")
-    df = pl.read_csv(csv_path, infer_schema_length=100000)
+    Returns:
+        str. It merely guarantees that a data file will be available for
+        loading by the main app after it completes.
+    """
 
-    print(f"Saving to Parquet: {out_path}")
-    df.write_parquet(out_path)
+    data_path = data_path_for_version(version)
+    ## Steps:
 
-    os.remove(csv_path)
-    print(f"Deleted temporary CSV: {csv_path}")
+    ## 0. Download
+
+    df = etl.import_census_data(version)
+
+    ## 1. Transform Data
+
+    # df = etl.transform_data(df)
+
+    # df.head()
+    ## 2. Geoprocess?
+
+    ## 3. Add fit scores.
+
+    ## 4. Add cargo categories.
+
+    ## 5. Add insurance.
+
+    # insurance data cleaning notebook
+
+    ## 6. Add FARS/CRSS.
+
+    # fars crss combiner notebook
+
+    ## 7. Add DQS.
+    # """
+    # Load the master parquet file and perform all transformations that are
+    # independent of user interaction (run once per session, then cached).
+    #
+    # This function:
+    # - Standardizes column names to lowercase.
+    # - Ensures DOT numbers are stored as strings.
+    # - Expands 'carrier_operation' codes into readable labels.
+    # - Normalizes year-like columns so they display cleanly as year strings.
+    # - Maps the ML model score ('ml_score') into 'company_fit_score' and sorts by that score.
+    # - Reorders columns so key identification/contact fields appear first.
+    # - Merges in any previously saved prospect status information from
+    #   STATUS_PATH, if that file exists.
+    # """
+    # df = pd.read_parquet(path)
+    #
+    # # Standardize all column names to lowercase for consistent access
+    # df.columns = df.columns.str.lower()
+    #
+    # # Ensure DOT numbers are strings to preserve leading zeros and allow safe joins
+    # if "dot_number" in df.columns:
+    #     df["dot_number"] = df["dot_number"].astype(str)
+    #
+    # # Normalize DQS (data quality score) if present
+    # # Stored as a numeric column in [0, 1] with non-numeric values coerced to NaN
+    # if "dqs" in df.columns:
+    #     df["dqs"] = pd.to_numeric(df["dqs"], errors="coerce")
+    #
+    # # Map 'carrier_operation' codes to descriptive text where available
+    # if "carrier_operation" in df.columns:
+    #     df["carrier_operation"] = df["carrier_operation"].map(
+    #         {
+    #             "A": "Interstate",
+    #             "B": "Intrastate Hazmat",
+    #             "C": "Intrastate Non-Hazmat",
+    #         }
+    #     ).fillna(df["carrier_operation"])
+    #
+    # # Normalize mileage year fields so they display as year-like strings
+    # for col in ["mcs150_mileage_year", "recent_mileage_year"]:
+    #     if col in df.columns:
+    #         df[col] = (
+    #             pd.to_numeric(df[col], errors="coerce")
+    #             .astype("Int64")
+    #             .astype(str)
+    #         )
+    #
+    # # Map ML model score to 'company_fit_score' used throughout the app
+    # if "ml_score" in df.columns:
+    #     df["company_fit_score"] = pd.to_numeric(
+    #         df["ml_score"], errors="coerce"
+    #     )
+    # else:
+    #     # Fallback: if ml_score is missing, keep the column so downstream code doesn't break
+    #     df["company_fit_score"] = np.nan
+    #
+    # # Move key identification and contact columns to the front
+    # display_columns = [
+    #     "dot_number", "legal_name", "company_fit_score",
+    #     "email_address", "telephone",
+    # ]
+    # rest = [c for c in df.columns if c not in display_columns]
+    # df = df[display_columns + rest]
+    #
+    # # Sort once by 'company_fit_score' so "top companies" is well defined
+    # df = df.sort_values("company_fit_score", ascending=False)
+    #
+    # # ----------------------------------------------------------
+    # # Attach persisted 'prospect_status' from STATUS_PATH (if any)
+    # # ----------------------------------------------------------
+    # df["dot_number"] = df["dot_number"].astype(str)
+    #
+    # if os.path.exists(STATUS_PATH):
+    #     try:
+    #         status_df = pd.read_parquet(STATUS_PATH)
+    #         status_df["dot_number"] = status_df["dot_number"].astype(str)
+    #
+    #         # Ensure exactly one 'prospect_status' per DOT; latest record wins
+    #         status_df = (
+    #             status_df[["dot_number", "prospect_status"]]
+    #             .dropna(subset=["dot_number"])
+    #             .drop_duplicates(subset=["dot_number"], keep="last")
+    #         )
+    #
+    #         # Merge saved statuses into the main DataFrame
+    #         df = df.merge(
+    #             status_df,
+    #             on="dot_number",
+    #             how="left",
+    #             suffixes=("", "_saved"),
+    #         )
+    #
+    #         # If merged file provides a saved status, use it; otherwise apply default
+    #         if "prospect_status_saved" in df.columns:
+    #             df["prospect_status"] = df["prospect_status_saved"].fillna(
+    #                 df.get("prospect_status", "Not Contacted")
+    #             )
+    #             df.drop(columns=["prospect_status_saved"], inplace=True)
+    #         else:
+    #             if "prospect_status" not in df.columns:
+    #                 df["prospect_status"] = "Not Contacted"
+    #
+    #     except Exception as e:
+    #         # If the status file cannot be read (missing/corrupted), ensure
+    #         # a 'prospect_status' column still exists with a default value
+    #         if "prospect_status" not in df.columns:
+    #             df["prospect_status"] = "Not Contacted"
+    # else:
+    #     # If there is no status file yet, initialize 'prospect_status' with a default
+    #     if "prospect_status" not in df.columns:
+    #         df["prospect_status"] = "Not Contacted"
+    #
+    # return df
+
+    df.write_parquet(data_path)
+
+    return "Preprocessing complete."
 
 
 if __name__ == "__main__":
