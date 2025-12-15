@@ -1,11 +1,12 @@
-!data/current_census_data_version.txt
 .ipynb_checkpoints/
 __pycache__
-*.parquet
 tmp
 data/*.txt
+data/*.csv
+data/data_axle_matched*
+data/geo*
+data/historical
 .env
-data/
 llm/output/
 scripts/fetch.log
 uv.lock
