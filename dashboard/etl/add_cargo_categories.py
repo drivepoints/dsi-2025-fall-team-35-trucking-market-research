@@ -1,3 +1,11 @@
+"""Module to add cargo categories to a Polars DataFrame based on DOT
+numbers.
+
+This modele relies on the CARGO_CATEGORIZED_FILE, which is constructed in
+Ben's cargo categorization notebook,
+analysis/notebooks/cargo_categorized_2.ipynb.
+"""
+
 import polars as pl
 from dashboard.config import CARGO_CATEGORIZED_FILE
 
