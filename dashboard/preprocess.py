@@ -32,14 +32,14 @@ def preprocess(version):
 
     ## 1. Transform Data
 
-    # df = etl.transform_data(df)
+    df = etl.transform_data(df)
 
-    # df.head()
     ## 2. Geoprocess?
 
     ## 3. Add fit scores.
 
     ## 4. Add cargo categories.
+    df = etl.add_cargo_categories(df)
 
     ## 5. Add insurance.
 
@@ -55,47 +55,19 @@ def preprocess(version):
     # independent of user interaction (run once per session, then cached).
     #
     # This function:
-    # - Standardizes column names to lowercase.
-    # - Ensures DOT numbers are stored as strings.
-    # - Expands 'carrier_operation' codes into readable labels.
-    # - Normalizes year-like columns so they display cleanly as year strings.
+    # - Normalizes year-like columns so they display cleanly as year
+    # strings.
     # - Maps the ML model score ('ml_score') into 'company_fit_score' and sorts by that score.
     # - Reorders columns so key identification/contact fields appear first.
     # - Merges in any previously saved prospect status information from
     #   STATUS_PATH, if that file exists.
     # """
-    # df = pd.read_parquet(path)
-    #
-    # # Standardize all column names to lowercase for consistent access
-    # df.columns = df.columns.str.lower()
-    #
-    # # Ensure DOT numbers are strings to preserve leading zeros and allow safe joins
-    # if "dot_number" in df.columns:
-    #     df["dot_number"] = df["dot_number"].astype(str)
     #
     # # Normalize DQS (data quality score) if present
     # # Stored as a numeric column in [0, 1] with non-numeric values coerced to NaN
     # if "dqs" in df.columns:
     #     df["dqs"] = pd.to_numeric(df["dqs"], errors="coerce")
     #
-    # # Map 'carrier_operation' codes to descriptive text where available
-    # if "carrier_operation" in df.columns:
-    #     df["carrier_operation"] = df["carrier_operation"].map(
-    #         {
-    #             "A": "Interstate",
-    #             "B": "Intrastate Hazmat",
-    #             "C": "Intrastate Non-Hazmat",
-    #         }
-    #     ).fillna(df["carrier_operation"])
-    #
-    # # Normalize mileage year fields so they display as year-like strings
-    # for col in ["mcs150_mileage_year", "recent_mileage_year"]:
-    #     if col in df.columns:
-    #         df[col] = (
-    #             pd.to_numeric(df[col], errors="coerce")
-    #             .astype("Int64")
-    #             .astype(str)
-    #         )
     #
     # # Map ML model score to 'company_fit_score' used throughout the app
     # if "ml_score" in df.columns:
