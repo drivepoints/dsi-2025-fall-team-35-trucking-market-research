@@ -64,6 +64,7 @@ st.markdown(
 DATA_PATH = "master_file.parquet"
 STATUS_PATH = "prospect_status.parquet"  # Path to a small overlay file that stores prospect status edits
 
+
 # ------------------------------------------------------------------
 # Data loading and one-time transformations
 # ------------------------------------------------------------------
@@ -99,36 +100,39 @@ def load_data(path: str) -> pd.DataFrame:
 
     # Map 'carrier_operation' codes to descriptive text where available
     if "carrier_operation" in df.columns:
-        df["carrier_operation"] = df["carrier_operation"].map(
-            {
-                "A": "Interstate",
-                "B": "Intrastate Hazmat",
-                "C": "Intrastate Non-Hazmat",
-            }
-        ).fillna(df["carrier_operation"])
+        df["carrier_operation"] = (
+            df["carrier_operation"]
+            .map(
+                {
+                    "A": "Interstate",
+                    "B": "Intrastate Hazmat",
+                    "C": "Intrastate Non-Hazmat",
+                }
+            )
+            .fillna(df["carrier_operation"])
+        )
 
     # Normalize mileage year fields so they display as year-like strings
     for col in ["mcs150_mileage_year", "recent_mileage_year"]:
         if col in df.columns:
             df[col] = (
-                pd.to_numeric(df[col], errors="coerce")
-                .astype("Int64")
-                .astype(str)
+                pd.to_numeric(df[col], errors="coerce").astype("Int64").astype(str)
             )
 
     # Map ML model score to 'company_fit_score' used throughout the app
     if "ml_score" in df.columns:
-        df["company_fit_score"] = pd.to_numeric(
-            df["ml_score"], errors="coerce"
-        )
+        df["company_fit_score"] = pd.to_numeric(df["ml_score"], errors="coerce")
     else:
         # Fallback: if ml_score is missing, keep the column so downstream code doesn't break
         df["company_fit_score"] = np.nan
 
     # Move key identification and contact columns to the front
     display_columns = [
-        "dot_number", "legal_name", "company_fit_score",
-        "email_address", "telephone",
+        "dot_number",
+        "legal_name",
+        "company_fit_score",
+        "email_address",
+        "telephone",
     ]
     rest = [c for c in df.columns if c not in display_columns]
     df = df[display_columns + rest]
@@ -227,6 +231,18 @@ PROSPECT_STATUS_OPTIONS = [
 # ------------------------------------------------------------------
 # GeoJSON loading helpers for county / state maps
 # ------------------------------------------------------------------
+# @st.cache_data
+# def load_zcta_geojson():
+#     """
+#     Load the nationwide ZCTA GeoJSON from disk.
+#
+#     This file is expected to contain all ZCTAs.
+#     The result is cached so it is only read once per session.
+#     """
+#     with open("2024_us_zcta.geojson") as f:
+#         return json.load(f)
+
+
 @st.cache_data
 def load_county_geojson():
     """
@@ -236,6 +252,20 @@ def load_county_geojson():
     The result is cached so it is only read once per session.
     """
     with open("tl_2024_us_county.geojson") as f:
+        return json.load(f)
+
+
+@st.cache_data
+def state_zctas_geojson(state: str):
+    """
+    Construct a GeoJSON FeatureCollection containing only the ZCTAs
+    belonging to a single state, identified by
+
+    This subset is used to draw the ZCTA-level choropleth when a single
+    state is selected in the filters.
+    """
+    geojson_path = f"data/zctas/zcta_{state}.geojson"
+    with open(geojson_path) as f:
         return json.load(f)
 
 
@@ -255,6 +285,23 @@ def load_state_counties_geojson(state_fips: str):
         if feat["properties"].get("STATEFP") == state_fips
     ]
     return {"type": "FeatureCollection", "features": features}
+
+
+@st.cache_data
+def get_state_zcta_frame(state_abbr: str) -> pd.DataFrame:
+    geojson = state_zctas_geojson(state_abbr.lower())
+
+    records = []
+    for feature in geojson["features"]:
+        props = feature["properties"]
+        records.append(
+            {
+                "phy_zip": props["GEOID20"],  # adjust if different
+                "zcta_label": props.get("NAME", props["GEOID20"]),
+            }
+        )
+
+    return pd.DataFrame(records)
 
 
 @st.cache_data
@@ -383,8 +430,12 @@ def apply_range_filter_with_optional_na(
 # ------------------------------------------------------------------
 # Constants / mappings used by multiple sections
 # ------------------------------------------------------------------
-fit_min = float(df["company_fit_score"].min()) if "company_fit_score" in df.columns else 0.0
-fit_max = float(df["company_fit_score"].max()) if "company_fit_score" in df.columns else 1.0
+fit_min = (
+    float(df["company_fit_score"].min()) if "company_fit_score" in df.columns else 0.0
+)
+fit_max = (
+    float(df["company_fit_score"].max()) if "company_fit_score" in df.columns else 1.0
+)
 
 # Default minimum fit score used in the CSV filename when filters are not active
 min_fit = 0.0
@@ -406,16 +457,56 @@ flag_label_to_col = {
 
 # Mapping from state postal abbreviations to 2-digit FIPS codes for county maps
 STATE_ABBR_TO_FIPS = {
-    "AL": "01", "AK": "02", "AZ": "04", "AR": "05", "CA": "06",
-    "CO": "08", "CT": "09", "DE": "10", "DC": "11", "FL": "12",
-    "GA": "13", "HI": "15", "ID": "16", "IL": "17", "IN": "18",
-    "IA": "19", "KS": "20", "KY": "21", "LA": "22", "ME": "23",
-    "MD": "24", "MA": "25", "MI": "26", "MN": "27", "MS": "28",
-    "MO": "29", "MT": "30", "NE": "31", "NV": "32", "NH": "33",
-    "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38",
-    "OH": "39", "OK": "40", "OR": "41", "PA": "42", "RI": "44",
-    "SC": "45", "SD": "46", "TN": "47", "TX": "48", "UT": "49",
-    "VT": "50", "VA": "51", "WA": "53", "WV": "54", "WI": "55",
+    "AL": "01",
+    "AK": "02",
+    "AZ": "04",
+    "AR": "05",
+    "CA": "06",
+    "CO": "08",
+    "CT": "09",
+    "DE": "10",
+    "DC": "11",
+    "FL": "12",
+    "GA": "13",
+    "HI": "15",
+    "ID": "16",
+    "IL": "17",
+    "IN": "18",
+    "IA": "19",
+    "KS": "20",
+    "KY": "21",
+    "LA": "22",
+    "ME": "23",
+    "MD": "24",
+    "MA": "25",
+    "MI": "26",
+    "MN": "27",
+    "MS": "28",
+    "MO": "29",
+    "MT": "30",
+    "NE": "31",
+    "NV": "32",
+    "NH": "33",
+    "NJ": "34",
+    "NM": "35",
+    "NY": "36",
+    "NC": "37",
+    "ND": "38",
+    "OH": "39",
+    "OK": "40",
+    "OR": "41",
+    "PA": "42",
+    "RI": "44",
+    "SC": "45",
+    "SD": "46",
+    "TN": "47",
+    "TX": "48",
+    "UT": "49",
+    "VT": "50",
+    "VA": "51",
+    "WA": "53",
+    "WV": "54",
+    "WI": "55",
     "WY": "56",
 }
 
@@ -440,19 +531,90 @@ if "phy_state" in df.columns:
     # Set of codes that represent non-US states or provinces to be excluded
     # from the main state filter control
     exclude_states = {
-        "AB", "AG", "AS", "BC", "BN", "BS", "BZ", "CH", "CI", "CL", "CP", "CR", "CS",
-        "DF", "DG", "DO", "FJ", "GB", "GE", "GJ", "GT", "GU", "HD", "HN", "JA", "KW",
-        "MB", "MC", "MP", "MR", "MX", "NB", "NL", "NS", "NT", "ON", "PE", "PR", "PU",
-        "QC", "QE", "QI", "RO", "SI", "SK", "SL", "SO", "SV", "TA", "TB", "TL", "VC",
-        "VI", "YT", "ZA",
+        "AB",
+        "AG",
+        "AS",
+        "BC",
+        "BN",
+        "BS",
+        "BZ",
+        "CH",
+        "CI",
+        "CL",
+        "CP",
+        "CR",
+        "CS",
+        "DF",
+        "DG",
+        "DO",
+        "FJ",
+        "GB",
+        "GE",
+        "GJ",
+        "GT",
+        "GU",
+        "HD",
+        "HN",
+        "JA",
+        "KW",
+        "MB",
+        "MC",
+        "MP",
+        "MR",
+        "MX",
+        "NB",
+        "NL",
+        "NS",
+        "NT",
+        "ON",
+        "PE",
+        "PR",
+        "PU",
+        "QC",
+        "QE",
+        "QI",
+        "RO",
+        "SI",
+        "SK",
+        "SL",
+        "SO",
+        "SV",
+        "TA",
+        "TB",
+        "TL",
+        "VC",
+        "VI",
+        "YT",
+        "ZA",
     }
 
     # States that are generally considered west of the Mississippi River
     # (used for a convenience filter in the UI)
     west_states = {
-        "WA", "OR", "CA", "NV", "ID", "ND", "MT", "SD", "MN", "IA",
-        "MO", "KS", "NE", "OK", "TX", "AZ", "NM", "CO", "UT",
-        "LA", "AR", "WY", "AK", "HI",
+        "WA",
+        "OR",
+        "CA",
+        "NV",
+        "ID",
+        "ND",
+        "MT",
+        "SD",
+        "MN",
+        "IA",
+        "MO",
+        "KS",
+        "NE",
+        "OK",
+        "TX",
+        "AZ",
+        "NM",
+        "CO",
+        "UT",
+        "LA",
+        "AR",
+        "WY",
+        "AK",
+        "HI",
     }
 
     all_states = sorted(df["phy_state"].dropna().unique())
@@ -488,39 +650,99 @@ if "phy_state" in df.columns:
     units_outlier_cap = get_meta(units_col, "q99", None)
 
     # Slider maximums are capped at the 99th percentile where available
-    miles_ui_max = miles_max if miles_outlier_cap is None else min(miles_max, int(miles_outlier_cap))
-    drivers_ui_max = drivers_max if drivers_outlier_cap is None else min(drivers_max, int(drivers_outlier_cap))
-    units_ui_max = units_max if units_outlier_cap is None else min(units_max, int(units_outlier_cap))
+    miles_ui_max = (
+        miles_max
+        if miles_outlier_cap is None
+        else min(miles_max, int(miles_outlier_cap))
+    )
+    drivers_ui_max = (
+        drivers_max
+        if drivers_outlier_cap is None
+        else min(drivers_max, int(drivers_outlier_cap))
+    )
+    units_ui_max = (
+        units_max
+        if units_outlier_cap is None
+        else min(units_max, int(units_outlier_cap))
+    )
 
     # ------------------------------------------------------------------
     # Precompute ranges for insurance / accident columns
     # ------------------------------------------------------------------
-    filings_min = int(get_meta(filings_col, "min", 0)) if filings_col in numeric_meta else None
-    filings_max = int(get_meta(filings_col, "max", 0)) if filings_col in numeric_meta else None
+    filings_min = (
+        int(get_meta(filings_col, "min", 0)) if filings_col in numeric_meta else None
+    )
+    filings_max = (
+        int(get_meta(filings_col, "max", 0)) if filings_col in numeric_meta else None
+    )
 
-    insurers_min = int(get_meta(insurers_col, "min", 0)) if insurers_col in numeric_meta else None
-    insurers_max = int(get_meta(insurers_col, "max", 0)) if insurers_col in numeric_meta else None
+    insurers_min = (
+        int(get_meta(insurers_col, "min", 0)) if insurers_col in numeric_meta else None
+    )
+    insurers_max = (
+        int(get_meta(insurers_col, "max", 0)) if insurers_col in numeric_meta else None
+    )
 
-    gap_min = int(get_meta(median_gap_col, "min", 0)) if median_gap_col in numeric_meta else None
-    gap_max = int(get_meta(median_gap_col, "max", 0)) if median_gap_col in numeric_meta else None
+    gap_min = (
+        int(get_meta(median_gap_col, "min", 0))
+        if median_gap_col in numeric_meta
+        else None
+    )
+    gap_max = (
+        int(get_meta(median_gap_col, "max", 0))
+        if median_gap_col in numeric_meta
+        else None
+    )
 
-    total_crashes_max = int(get_meta(total_crashes_col, "max", 0)) if total_crashes_col in numeric_meta else None
-    at_fault_crashes_max = int(get_meta(at_fault_crashes_col, "max", 0)) if at_fault_crashes_col in numeric_meta else None
-    pct_at_fault_max = float(get_meta(pct_at_fault_col, "max", 0.0)) if pct_at_fault_col in numeric_meta else None
+    total_crashes_max = (
+        int(get_meta(total_crashes_col, "max", 0))
+        if total_crashes_col in numeric_meta
+        else None
+    )
+    at_fault_crashes_max = (
+        int(get_meta(at_fault_crashes_col, "max", 0))
+        if at_fault_crashes_col in numeric_meta
+        else None
+    )
+    pct_at_fault_max = (
+        float(get_meta(pct_at_fault_col, "max", 0.0))
+        if pct_at_fault_col in numeric_meta
+        else None
+    )
 
-    safety_index_min = float(get_meta(safety_index_col, "min", 0.0)) if safety_index_col in numeric_meta else None
-    safety_index_max = float(get_meta(safety_index_col, "max", 0.0)) if safety_index_col in numeric_meta else None
+    safety_index_min = (
+        float(get_meta(safety_index_col, "min", 0.0))
+        if safety_index_col in numeric_meta
+        else None
+    )
+    safety_index_max = (
+        float(get_meta(safety_index_col, "max", 0.0))
+        if safety_index_col in numeric_meta
+        else None
+    )
 
     # ------------------------------------------------------------------
     # Defaults for basic filters (country, mail, hazmat, territories)
     # ------------------------------------------------------------------
-    countries = sorted(df["phy_country"].dropna().unique()) if "phy_country" in df.columns else []
-    default_country = "US" if "US" in countries else (countries[0] if countries else None)
+    countries = (
+        sorted(df["phy_country"].dropna().unique())
+        if "phy_country" in df.columns
+        else []
+    )
+    default_country = (
+        "US" if "US" in countries else (countries[0] if countries else None)
+    )
 
-    mail_options = sorted(df["us_mail"].dropna().unique()) if "us_mail" in df.columns else []
-    hm_options = sorted(df["hm_flag"].dropna().unique()) if "hm_flag" in df.columns else []
+    mail_options = (
+        sorted(df["us_mail"].dropna().unique()) if "us_mail" in df.columns else []
+    )
+    hm_options = (
+        sorted(df["hm_flag"].dropna().unique()) if "hm_flag" in df.columns else []
+    )
 
-    default_mail = "N" if "N" in mail_options else (mail_options[0] if mail_options else None)
+    default_mail = (
+        "N" if "N" in mail_options else (mail_options[0] if mail_options else None)
+    )
     default_hm = "N" if "N" in hm_options else (hm_options[0] if hm_options else None)
 
     # Initialize session_state defaults that must persist across reruns
@@ -639,7 +861,6 @@ if "phy_state" in df.columns:
 
     st.sidebar.button("Reset filters", on_click=reset_all_filters)
 
-
     # ------------------------------------------------------------------
     # Company fit score filter (applies to the entire dataset)
     # ------------------------------------------------------------------
@@ -690,21 +911,21 @@ if "phy_state" in df.columns:
             help="Select one or multiple states. Selecting one state will show a county breakdown.",
         )
 
-        selected_counties: list[str] = []
-        if selected_states and len(selected_states) == 1 and "county_name" in df.columns:
-            state_for_counties = selected_states[0]
-            available_counties = (
-                df.loc[df["phy_state"] == state_for_counties, "county_name"]
+        selected_zips: list[str] = []
+        if selected_states and len(selected_states) == 1 and "phy_zip" in df.columns:
+            state_for_zips = selected_states[0]
+            available_zips = (
+                df.loc[df["phy_state"] == state_for_zips, "phy_zip"]
                 .dropna()
                 .sort_values()
                 .unique()
                 .tolist()
             )
 
-            selected_counties = st.multiselect(
-                f"County (only for {state_for_counties})",
-                options=available_counties,
-                key="county_filter",
+            selected_zips = st.multiselect(
+                f"ZCTA (only for {state_for_zips})",
+                options=available_zips,
+                key="zcta_filter",
             )
 
     # Build human-readable summary of geographic filters and update mask
@@ -717,11 +938,9 @@ if "phy_state" in df.columns:
     if selected_states:
         mask &= df["phy_state"].isin(selected_states)
 
-        if len(selected_states) == 1 and selected_counties and "county_name" in df.columns:
-            mask &= df["county_name"].isin(selected_counties)
-            state_msg_parts.append(
-                f"{selected_states[0]} ({', '.join(selected_counties)})"
-            )
+        if len(selected_states) == 1 and selected_zips and "phy_zip" in df.columns:
+            mask &= df["phy_zip"].isin(selected_zips)
+            state_msg_parts.append(f"{selected_states[0]} ({', '.join(selected_zips)})")
         else:
             state_msg_parts.append(", ".join(selected_states))
     else:
@@ -769,7 +988,6 @@ if "phy_state" in df.columns:
                     f"True maximum in dataset: {units_max:,}."
                 ),
             )
-
 
             # Use the values as entered. If the minimum is greater than the
             # maximum, no rows should pass this filter.
@@ -861,9 +1079,7 @@ if "phy_state" in df.columns:
     with st.sidebar.expander("Operation Type Filters", expanded=False):
         # Identify which operation flags actually exist in the dataset
         available_labels = [
-            label
-            for label, col in flag_label_to_col.items()
-            if col in df.columns
+            label for label, col in flag_label_to_col.items() if col in df.columns
         ]
 
         # Filter companies where any selected operation flags are true
@@ -952,8 +1168,10 @@ if "phy_state" in df.columns:
 
             # Sort alphabetically but push Other and Null to the bottom
             def sort_key(cat):
-                if cat == "Other": return (1, cat)
-                if cat == "Null": return (2, cat)
+                if cat == "Other":
+                    return (1, cat)
+                if cat == "Null":
+                    return (2, cat)
                 return (0, cat.lower())
 
             cargo_options = sorted(present_categories, key=sort_key)
@@ -963,7 +1181,7 @@ if "phy_state" in df.columns:
                 "Cargo Carried (ANY of – INCLUDE)",
                 options=cargo_options,
                 key="cargo_categorized_include",
-                help="Keep companies carrying ANY of these categories."
+                help="Keep companies carrying ANY of these categories.",
             )
 
             # ----------- EXCLUDE FILTER (NONE of) -----------
@@ -971,7 +1189,7 @@ if "phy_state" in df.columns:
                 "Cargo Carried (NONE of – EXCLUDE)",
                 options=cargo_options,
                 key="cargo_categorized_exclude",
-                help="Exclude companies carrying ANY of these categories."
+                help="Exclude companies carrying ANY of these categories.",
             )
 
             # FAST lookup sets
@@ -1022,14 +1240,19 @@ if "phy_state" in df.columns:
     # Apply contactability filter if enabled
     if ready_only:
         email_exists = (
-            df["email_address"].notna()
-            & (df["email_address"].astype(str).str.strip() != "")
-        ) if "email_address" in df.columns else pd.Series(False, index=df.index)
+            (
+                df["email_address"].notna()
+                & (df["email_address"].astype(str).str.strip() != "")
+            )
+            if "email_address" in df.columns
+            else pd.Series(False, index=df.index)
+        )
 
         phone_exists = (
-            df["telephone"].notna()
-            & (df["telephone"].astype(str).str.strip() != "")
-        ) if "telephone" in df.columns else pd.Series(False, index=df.index)
+            (df["telephone"].notna() & (df["telephone"].astype(str).str.strip() != ""))
+            if "telephone" in df.columns
+            else pd.Series(False, index=df.index)
+        )
 
         mask &= email_exists | phone_exists
 
@@ -1324,7 +1547,7 @@ if "phy_state" in df.columns:
                 s_all = get_numeric_series(df, drivers_col)
                 if s_all is not None:
                     mask &= s_all.isna() | (s_all <= drivers_outlier_cap)
-                    
+
         if miles_outlier_cap is not None and mileage_col in df.columns:
             cap_miles = st.checkbox(
                 "Exclude extreme mileage outliers (top 1%)",
@@ -1435,10 +1658,7 @@ if "phy_state" in df.columns:
         )
 
     # Compute percentage of companies with verified addresses per state
-    if (
-        "CompanyCount" in state_agg.columns
-        and "match_status" in source_for_map.columns
-    ):
+    if "CompanyCount" in state_agg.columns and "match_status" in source_for_map.columns:
         verified_counts = (
             (source_for_map["match_status"] == "Match")
             .groupby(source_for_map["phy_state"])
@@ -1488,7 +1708,7 @@ if "phy_state" in df.columns:
             "avg_power_units",
             "Average Power Units",
         )
-        
+
     if "avg_dqs" in state_agg.columns:
         metric_options["Average Data Quality Score (DQS)"] = (
             "avg_dqs",
@@ -1666,98 +1886,117 @@ if "phy_state" in df.columns:
     with col_map_right:
         unique_states = source_for_map["phy_state"].dropna().unique()
 
-        # When exactly one state is selected, show a county-level map
-        if len(unique_states) == 1 and "county_fips" in source_for_map.columns:
+        # When exactly one state is selected, show a ZCTA-level map
+        if len(unique_states) == 1 and "phy_zip" in source_for_map.columns:
             state_abbr = unique_states[0]
-            state_fips = STATE_ABBR_TO_FIPS.get(state_abbr)
 
-            st.subheader(f"County Metrics – {state_abbr} (Verified Addresses Only)")
+            st.subheader(f"ZCTA Metrics – {state_abbr}")
 
-            if not state_fips:
-                st.info("No FIPS mapping available for this state.")
+            if not state_abbr:
+                st.info("No ZCTA mapping available for this state.")
             else:
                 if metric_col == "VerifiedPct":
                     # In this special case, county-level verified percentages
                     # can be misleading and are explained in text instead.
-                    st.markdown("<div style='height:330px'></div>", unsafe_allow_html=True)
+                    st.markdown(
+                        "<div style='height:330px'></div>", unsafe_allow_html=True
+                    )
 
-                    missing_county_rows = source_for_map[
+                    missing_zcta_rows = source_for_map[
                         (source_for_map["phy_state"] == state_abbr)
-                        & source_for_map["county_fips"].isna()
+                        & source_for_map["phy_zip"].isna()
                     ]
 
                     st.caption(
                         f"County-level % Verified is not shown because it provides little additional insight. "
                         f"It can only be calculated for companies in {state_abbr} that have both a verified "
-                        f"address and a known county. {len(missing_county_rows):,} companies in {state_abbr} "
+                        f"address and a known county. {len(missing_zcta_rows):,} companies in {state_abbr} "
                         f"lack county information and would be excluded, which makes all counties "
                         f"be 100% verified even when the statewide percentage is lower."
                     )
 
                 else:
                     # Add a spacer so the county map lines up visually with the national map
-                    st.markdown("<div style='height:120px'></div>", unsafe_allow_html=True)
+                    st.markdown(
+                        "<div style='height:120px'></div>", unsafe_allow_html=True
+                    )
 
                     state_df = source_for_map[
                         (source_for_map["phy_state"] == state_abbr)
-                        & (source_for_map["county_fips"].notna())
+                        & (source_for_map["phy_zip"].notna())
                     ]
 
-                    base_counties = get_state_county_lookup(state_fips)
-                    if base_counties.empty:
-                        st.info("No county shapes found for this state.")
+                    base_zctas = get_state_zcta_frame(state_abbr)
+                    if base_zctas.empty:
+                        st.info("No ZCTA shapes found for this state.")
                     else:
-                        county_counts = base_counties.copy()
+                        zcta_counts = base_zctas.copy()
                         metric_series = None
 
                         # Aggregate the selected metric at the county level
                         if not state_df.empty:
-                            by_county = state_df.groupby("county_fips")
+                            by_zcta = state_df.groupby("phy_zip")
 
                             if metric_col == "CompanyCount":
                                 metric_series = (
-                                    by_county["county_fips"]
-                                    .size()
-                                    .rename("MetricValue")
+                                    by_zcta["phy_zip"].size().rename("MetricValue")
                                 )
-                            elif metric_col == "avg_company_fit_score" and "company_fit_score" in state_df.columns:
+                            elif (
+                                metric_col == "avg_company_fit_score"
+                                and "company_fit_score" in state_df.columns
+                            ):
                                 metric_series = (
-                                    by_county["company_fit_score"]
+                                    by_zcta["company_fit_score"]
                                     .mean()
                                     .rename("MetricValue")
                                 )
 
-                            elif metric_col == "avg_recent_mileage" and "recent_mileage" in state_df.columns:
+                            elif (
+                                metric_col == "avg_recent_mileage"
+                                and "recent_mileage" in state_df.columns
+                            ):
                                 metric_series = (
-                                    by_county["recent_mileage"]
+                                    by_zcta["recent_mileage"]
                                     .mean()
                                     .rename("MetricValue")
                                 )
 
-                            elif metric_col == "avg_drivers" and "driver_total" in state_df.columns:
+                            elif (
+                                metric_col == "avg_drivers"
+                                and "driver_total" in state_df.columns
+                            ):
                                 metric_series = (
-                                    by_county["driver_total"]
+                                    by_zcta["driver_total"].mean().rename("MetricValue")
+                                )
+
+                            elif (
+                                metric_col == "avg_power_units"
+                                and "nbr_power_unit" in state_df.columns
+                            ):
+                                metric_series = (
+                                    by_zcta["nbr_power_unit"]
                                     .mean()
                                     .rename("MetricValue")
                                 )
 
-                            elif metric_col == "avg_power_units" and "nbr_power_unit" in state_df.columns:
+                            elif (
+                                metric_col == "InsuranceCount"
+                                and "num_filings" in state_df.columns
+                            ):
                                 metric_series = (
-                                    by_county["nbr_power_unit"]
-                                    .mean()
-                                    .rename("MetricValue")
-                                )
-
-                            elif metric_col == "InsuranceCount" and "num_filings" in state_df.columns:
-                                metric_series = (
-                                    by_county["num_filings"]
+                                    by_zcta["num_filings"]
                                     .apply(lambda s: s.notna().sum())
                                     .rename("MetricValue")
                                 )
 
-                            elif metric_col == "InsurancePct" and "num_filings" in state_df.columns:
-                                counts = by_county["county_fips"].size()
-                                ins_counts = by_county["num_filings"].apply(lambda s: s.notna().sum())
+                            elif (
+                                metric_col == "InsurancePct"
+                                and "num_filings" in state_df.columns
+                            ):
+                                counts = by_zcta["phy_zip"].size()
+                                ins_counts = by_zcta["num_filings"].apply(
+                                    lambda s: s.notna().sum()
+                                )
                                 pct = np.where(
                                     counts > 0,
                                     ins_counts / counts * 100.0,
@@ -1771,55 +2010,58 @@ if "phy_state" in df.columns:
 
                             elif metric_col == "avg_dqs" and "dqs" in state_df.columns:
                                 metric_series = (
-                                    by_county["dqs"]
-                                    .mean()
-                                    .rename("MetricValue")
+                                    by_zcta["dqs"].mean().rename("MetricValue")
                                 )
 
                         # Attach metric values (if any) to the full list of counties
                         if metric_series is not None:
-                            metric_df = (
-                                metric_series.reset_index()
-                                .rename(columns={"county_fips": "county_fips"})
-                            )
-                            county_counts = county_counts.merge(
+                            metric_df = metric_series.reset_index()
+                            # .rename(
+                            #     columns={"county_fips": "county_fips"}
+                            # )
+                            zcta_counts = zcta_counts.merge(
                                 metric_df,
-                                on="county_fips",
+                                on="phy_zip",
                                 how="left",
                             )
                         else:
                             # No metric for this selection -> start with all NaN
-                            county_counts["MetricValue"] = np.nan
+                            zcta_counts["MetricValue"] = np.nan
 
                         # Determine which counties are explicitly excluded by the
                         # geography filters (county multiselect). If no counties
                         # are selected, all counties in the state are considered
                         # geo-allowed.
-                        if selected_counties:
-                            allowed_names = set(selected_counties)
-                            county_counts["geo_allowed"] = county_counts["county_name"].isin(allowed_names)
+                        if selected_zips:
+                            allowed = set(selected_zips)
+                            zcta_counts["geo_allowed"] = zcta_counts["phy_zip"].isin(
+                                allowed
+                            )
                         else:
-                            county_counts["geo_allowed"] = True
+                            zcta_counts["geo_allowed"] = True
 
                         # Metric used for coloring:
-                        # - Counties that are still allowed by the geographic filters
+                        # - ZCTAS that are still allowed by the geographic
+                        # filters
                         #   but have no remaining companies get a value of 0 so they
                         #   appear in the normal color scale.
-                        # - Counties that are geo-filtered-out get NaN and are drawn
+                        # - ZCTAs that are geo-filtered-out get NaN and are
+                        # drawn
                         #   in gray.
-                        county_counts["MetricForMap"] = np.where(
-                            county_counts["geo_allowed"],
-                            county_counts["MetricValue"],
+                        zcta_counts["MetricForMap"] = np.where(
+                            zcta_counts["geo_allowed"],
+                            zcta_counts["MetricValue"],
                             np.nan,
                         )
 
-                        county_counts.loc[
-                            county_counts["geo_allowed"] & county_counts["MetricForMap"].isna(),
+                        zcta_counts.loc[
+                            zcta_counts["geo_allowed"]
+                            & zcta_counts["MetricForMap"].isna(),
                             "MetricForMap",
                         ] = 0.0
 
                         # Build human-readable hover text
-                        def _format_county_hover(row):
+                        def _format_zcta_hover(row):
                             if not row["geo_allowed"]:
                                 return "Filtered Out"
                             val = row["MetricForMap"]
@@ -1828,33 +2070,32 @@ if "phy_state" in df.columns:
                             else:
                                 return f"{metric_title}: {val:,.2f}"
 
-                        county_counts["HoverText"] = county_counts.apply(
-                            _format_county_hover,
+                        zcta_counts["HoverText"] = zcta_counts.apply(
+                            _format_zcta_hover,
                             axis=1,
                         )
 
-                        inactive_df = county_counts[~county_counts["geo_allowed"]]
-                        active_df = county_counts[county_counts["geo_allowed"]]
+                        inactive_df = zcta_counts[~zcta_counts["geo_allowed"]]
+                        active_df = zcta_counts[zcta_counts["geo_allowed"]]
 
-                        counties_geojson = load_state_counties_geojson(state_fips)
+                        zcta_geojson = state_zctas_geojson(state_abbr)
 
-
-                        fig_counties = go.Figure()
+                        fig_zcta = go.Figure()
 
                         # ------------------------------------------------------
                         # Base layer: counties with no data after filters
                         # (light gray, thin border, "Filtered Out" hover)
                         # ------------------------------------------------------
                         if not inactive_df.empty:
-                            fig_counties.add_trace(
+                            fig_zcta.add_trace(
                                 go.Choropleth(
-                                    geojson=counties_geojson,
-                                    locations=inactive_df["county_fips"],
-                                    featureidkey="properties.GEOID",
+                                    geojson=zcta_geojson,
+                                    locations=inactive_df["phy_zip"],
+                                    featureidkey="properties.GEOID20",
                                     z=[0] * len(inactive_df),
                                     colorscale=[[0, "#e0e0e0"], [1, "#e0e0e0"]],
                                     showscale=False,
-                                    customdata=inactive_df[["county_name"]].to_numpy(),
+                                    customdata=inactive_df[["phy_zip"]].to_numpy(),
                                     hovertemplate=(
                                         "%{customdata[0]}<br>Filtered Out<extra></extra>"
                                     ),
@@ -1874,11 +2115,11 @@ if "phy_state" in df.columns:
                         if not active_df.empty:
                             active_z = active_df["MetricForMap"].astype(float)
 
-                            fig_counties.add_trace(
+                            fig_zcta.add_trace(
                                 go.Choropleth(
-                                    geojson=counties_geojson,
-                                    locations=active_df["county_fips"],
-                                    featureidkey="properties.GEOID",
+                                    geojson=zcta_geojson,
+                                    locations=active_df["phy_zip"],
+                                    featureidkey="properties.GEOID20",
                                     z=active_z,
                                     colorscale="Blues",
                                     colorbar=dict(
@@ -1888,39 +2129,40 @@ if "phy_state" in df.columns:
                                         len=0.8,
                                         thickness=12,
                                     ),
-                                    customdata=active_df[["county_name"]].to_numpy(),
+                                    customdata=active_df[["phy_zip"]].to_numpy(),
                                     text=active_df["HoverText"],
                                     hovertemplate=(
                                         "%{customdata[0]}<br>%{text}<extra></extra>"
                                     ),
                                     marker=dict(
-                                        line=dict(color="black", width=1.0),
+                                        line=dict(
+                                            color="rgba(100, 100, 100, 0.6)", width=0.25
+                                        ),
                                     ),
                                 )
                             )
 
                             # Match numeric formatting with the state-level map
                             if metric_col in ["CompanyCount", "InsuranceCount"]:
-                                fig_counties.data[-1].colorbar.tickformat = ",d"
+                                fig_zcta.data[-1].colorbar.tickformat = ",d"
                             else:
-                                fig_counties.data[-1].colorbar.tickformat = ",.2f"
+                                fig_zcta.data[-1].colorbar.tickformat = ",.2f"
 
                         # Shared layout for county map
-                        fig_counties.update_geos(
+                        fig_zcta.update_geos(
                             fitbounds="locations",
                             visible=False,
                         )
 
-                        fig_counties.update_layout(
+                        fig_zcta.update_layout(
                             height=420,
                             margin=dict(l=0, r=0, t=10, b=0),
                         )
 
                         if active_df.empty and inactive_df.empty:
-                            st.info("No county data available for current filters.")
+                            st.info("No ZCTA data available for current filters.")
                         else:
-                            st.plotly_chart(fig_counties, use_container_width=True)
-
+                            st.plotly_chart(fig_zcta, use_container_width=True)
 
         # If multiple states are selected, show a Top 10 bar chart instead
         else:
@@ -2002,12 +2244,14 @@ with col_hist:
             centers = (edges[:-1] + edges[1:]) / 2.0
             median_fit = float(s.median())
 
-            hist_df = pd.DataFrame({
-                "BinCenter": centers,
-                "Count": counts,
-                "BinStart": edges[:-1],
-                "BinEnd": edges[1:],
-            })
+            hist_df = pd.DataFrame(
+                {
+                    "BinCenter": centers,
+                    "Count": counts,
+                    "BinStart": edges[:-1],
+                    "BinEnd": edges[1:],
+                }
+            )
 
             fig_fit = px.bar(
                 hist_df,
@@ -2042,6 +2286,7 @@ with col_hist:
             fig_fit.update_layout(height=300, margin=dict(l=20, r=10, t=60, b=10))
 
             st.plotly_chart(fig_fit, use_container_width=True)
+
 
 # ------------------------------------------------------------
 # Helper: segmented fleet distributions (business-friendly bins)
@@ -2093,7 +2338,7 @@ def plot_segmented_metric(
 
     seg_counts = (
         cat.value_counts()
-        .reindex(labels)         # keep segment order stable
+        .reindex(labels)  # keep segment order stable
         .fillna(0)
         .rename_axis("Segment")
         .reset_index(name="Count")
@@ -2107,7 +2352,7 @@ def plot_segmented_metric(
     if len(nonzero_indices) > 0:
         first_idx = nonzero_indices[0]
         last_idx = nonzero_indices[-1]
-        seg_counts = seg_counts.iloc[first_idx:last_idx + 1].copy()
+        seg_counts = seg_counts.iloc[first_idx : last_idx + 1].copy()
 
     fig = px.bar(
         seg_counts,
@@ -2283,7 +2528,16 @@ elif min_miles_current < 50_000:
     ]
 elif min_miles_current < 100_000:
     # Drop 10k–50k; keep 50k–100k & 100k–250k, expand high end
-    miles_bins = [50_000, 100_000, 250_000, 500_000, 750_000, 1_000_000, 1_250_000, np.inf]
+    miles_bins = [
+        50_000,
+        100_000,
+        250_000,
+        500_000,
+        750_000,
+        1_000_000,
+        1_250_000,
+        np.inf,
+    ]
     miles_labels = [
         "50k–100k",
         "100k–250k",
@@ -2295,7 +2549,16 @@ elif min_miles_current < 100_000:
     ]
 elif min_miles_current < 250_000:
     # Drop 50k–100k once min >= 100k; keep 100k–250k then 250k+
-    miles_bins = [100_000, 250_000, 500_000, 750_000, 1_000_000, 1_250_000, 1_500_000, np.inf]
+    miles_bins = [
+        100_000,
+        250_000,
+        500_000,
+        750_000,
+        1_000_000,
+        1_250_000,
+        1_500_000,
+        np.inf,
+    ]
     miles_labels = [
         "100k–250k",
         "250k–500k",
@@ -2399,8 +2662,10 @@ if not table_df.empty:
         search_mask &= table_df["dot_number"].astype(str) == dot_search.strip()
 
     if name_search.strip() and "legal_name" in table_df.columns:
-        search_mask &= table_df["legal_name"].astype(str).str.contains(
-            name_search.strip(), case=False, na=False
+        search_mask &= (
+            table_df["legal_name"]
+            .astype(str)
+            .str.contains(name_search.strip(), case=False, na=False)
         )
 
     table_df = table_df[search_mask]
@@ -2565,7 +2830,9 @@ display_df = display_df.rename(columns=full_rename)
 #  CSV EXPORT (with column order)
 # =======================
 if len(table_df) == 0:
-    st.info("No companies match the current filters and search, so there is nothing to download.")
+    st.info(
+        "No companies match the current filters and search, so there is nothing to download."
+    )
 else:
     max_export = len(table_df)
     default_export = min(200, max_export)
@@ -2581,14 +2848,13 @@ else:
 
         export_n = st.number_input(
             label="Number of top companies to download",  # non-empty for accessibility
-            label_visibility="collapsed",                # hides the built-in label
+            label_visibility="collapsed",  # hides the built-in label
             min_value=1,
             max_value=max_export,
             value=default_export,
             step=50,
             key="export_n",
         )
-
 
     # Take the first N rows of the filtered and searched table
     full_export_df = table_df.head(export_n).copy()
@@ -2597,7 +2863,7 @@ else:
     if "dot_number" in full_export_df.columns:
         full_export_df["FMCSA Link"] = (
             '=HYPERLINK("https://safer.fmcsa.dot.gov/query.asp?'
-            'searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string='
+            "searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string="
             + full_export_df["dot_number"].astype(str)
             + '","FMCSA Profile")'
         )
@@ -2674,9 +2940,7 @@ else:
     ):
         # Map edited preview rows back to their DOT numbers
         dots_for_rows = table_df.loc[edited_preview.index, "dot_number"].astype(str)
-        new_status_map = dict(
-            zip(dots_for_rows, edited_preview["Prospect Status"])
-        )
+        new_status_map = dict(zip(dots_for_rows, edited_preview["Prospect Status"]))
         st.session_state["prospect_status_map"].update(new_status_map)
 
         # Re-apply the updated status map to all relevant DataFrames
@@ -2706,7 +2970,10 @@ else:
         if st.button("💾 Commit Prospect Status Changes"):
             # Only save rows where the status is not the default ("Not Contacted")
             to_save = (
-                df.loc[df["prospect_status"] != "Not Contacted", ["dot_number", "prospect_status"]]
+                df.loc[
+                    df["prospect_status"] != "Not Contacted",
+                    ["dot_number", "prospect_status"],
+                ]
                 .dropna(subset=["dot_number"])
                 .assign(dot_number=lambda d: d["dot_number"].astype(str))
                 .drop_duplicates(subset=["dot_number"], keep="last")
