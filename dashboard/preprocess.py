@@ -39,6 +39,7 @@ def preprocess(version):
     ## 3. Add fit scores.
 
     ## 4. Add cargo categories.
+
     df = etl.add_cargo_categories(df)
 
     ## 5. Add insurance.
@@ -92,7 +93,6 @@ def preprocess(version):
     # # ----------------------------------------------------------
     # # Attach persisted 'prospect_status' from STATUS_PATH (if any)
     # # ----------------------------------------------------------
-    # df["dot_number"] = df["dot_number"].astype(str)
     #
     # if os.path.exists(STATUS_PATH):
     #     try:
