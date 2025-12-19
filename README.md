@@ -39,9 +39,21 @@ In its current iteration, the data application relies on `master_file.parquet`, 
 - [`master_file.parquet`](https://drive.google.com/file/d/1BSIEEkaXgfTXaR7jr1GxFc8DCOe702yW/view?usp=sharing) is created in `analysis/notebooks/master_data_merge.ipynb`.
 - `analysis/notebooks/master_data_merge.ipynb` relies on:
   - The original census data (`SMS_Input_-_Motor_Carrier_Census_Information_20250919.csv`)
-  - [`Latest_company_fit_scores.csv`](https://drive.google.com/file/d/14L3jFsL5qEPSQFVecrf4fwu3rRnVw2MK/view?usp=sharing), which is produced by:
-  - [`geocoded_addresses.parquet`](https://drive.google.com/file/d/1qNJuClVmmwTHQSeUDIazD_rhNh-7ovKQ/view?usp=sharing), which is produced by:
+  - [`Latest_company_fit_scores.csv`](https://drive.google.com/file/d/14L3jFsL5qEPSQFVecrf4fwu3rRnVw2MK/view?usp=sharing), which is produced by `analysis/notebooks/LR_1000_with_cargo_pred.ipynb` as `company_ml_scores.csv`.
+    - `analysis/notebooks/LR_1000_with_cargo_pred.ipynb` relies on:
+      - The original census data (as `transportation_data_20250917_222245.parquet`)
+      - `cargo_multi_hot_fast.parquet`, which is produced by
+      - `final_model.pkl`, `feature_cols.pkl`, `te_maps.pkl`, and `target_cols.pkl`, all produced by `analysis/notebooks/LR_1000_with_cargo_train.ipynb`.
+        - `analysis/notebooks/LR_1000_with_cargo_train.ipynb` relies on:
+          - The original census data (as `transportation_data_20250917_222245.parquet`)
+          - `cargo_multi_hot_fast.parquet`, which is produced by
+          - `sample_annotated_400.csv`, `sample_annotated_100.csv`, `sample_annotated_494.csv`
+  - [`geocoded_addresses.parquet`](https://drive.google.com/file/d/1qNJuClVmmwTHQSeUDIazD_rhNh-7ovKQ/view?usp=sharing), which is produced by `analysis/scripts/convert_raw_geocode_to_parquet.py`
+    - `analysis/scripts/convert_raw_geocode_to_parquet.py` relies on:
+      - `data/geocode_results_raw.txt`, which is produced by `analysis/scripts/census_geocode_raw.py`.
+        - `analysis/scripts/census_geocode_raw.py` relies on:
+          - The original census data, as `SMS_Input_-_Motor_Carrier_Census_Information_20250919.parquet`)
   - [`cargo_with_categories.parquet`](https://drive.google.com/file/d/1yn0ECWxu_BqdFbNkSAbMwyfKI2Chvl9D/view?usp=sharing), which is produced by:
-  - `data/insurance_summary.parquet`, which is produced by:
-  - `data/fars_crss_census.parquet`, which is produced by:
+  - `insurance_summary.parquet`, which is produced by:
+  - `fars_crss_census.parquet`, which is produced by:
   - [`dqs_output.csv`](https://drive.google.com/file/d/188g4XhWKIGr86AQCQXbjqUei9J9nWpFU/view?usp=sharing), which is produced by:
