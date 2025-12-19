@@ -38,6 +38,7 @@ In its current iteration, the data application relies on `master_file.parquet`, 
 
 - [`master_file.parquet`](https://drive.google.com/file/d/1BSIEEkaXgfTXaR7jr1GxFc8DCOe702yW/view?usp=sharing) is created in `analysis/notebooks/master_data_merge.ipynb`.
 - `analysis/notebooks/master_data_merge.ipynb` relies on:
+
   - The original census data (`SMS_Input_-_Motor_Carrier_Census_Information_20250919.csv`)
   - [`Latest_company_fit_scores.csv`](https://drive.google.com/file/d/14L3jFsL5qEPSQFVecrf4fwu3rRnVw2MK/view?usp=sharing), which is produced by `analysis/notebooks/LR_1000_with_cargo_pred.ipynb` as `company_ml_scores.csv`.
     - `analysis/notebooks/LR_1000_with_cargo_pred.ipynb` relies on:
@@ -79,3 +80,55 @@ In its current iteration, the data application relies on `master_file.parquet`, 
           - [`crss_2022_vehicle.csv`](https://drive.google.com/file/d/1cJ3mwAZ_tr-6wXMF9njPgj1h5kdhnSa7/view?usp=sharing)
           - [`crss_2023_vehicle.csv`](https://drive.google.com/file/d/1ZDN0RZAy5Hu00m4aJsjB2MwmhUwc4ITN/view?usp=sharing)
   - [`dqs_output.csv`](https://drive.google.com/file/d/188g4XhWKIGr86AQCQXbjqUei9J9nWpFU/view?usp=sharing), which is likely produced by `analysis/notebooks/dqs_notebook.ipynb`
+
+  ## Experiments
+
+  The `experiments` folder contains dead ends and code for potential future work.
+
+  - 📁 `llm/`
+    - 📁 `prompts/`
+      - `categorize_cargo_carried.py`
+      - `overall_fit_cot_examples_v1.py`
+      - `overall_fit_cot_v1.py`
+      - `validity_baseline_v1.py`
+      - `validity_cot_examples_v1.py`
+      - `validity_rubric_v1.py`
+      - `zsolt_rules_v1.py`
+      - `zsolt_rules_v2.py`
+      - `zsolt_rules_v3.py`
+      - `zsolt_rules_v4.py`
+    - 📁 `validation/`
+      - `accuracy-summary.txt`
+      - `ground-truth-100.csv`
+      - `ground-truth-zsolt.csv`
+      - `initial_company_fit_accuracy.txt`
+      - `pro_binary_accuracy.txt`
+      - `sample-for-annotation-100.csv`
+      - `v2_binary_accuracy.txt`
+  - 📁 `notebooks/`
+    - 📓 `TAM_model.ipynb` - calculates the TAM.
+    * 📁 `data_axle`
+      - 📓 `Predicting NAICS.ipynb` - incomplete effort to develop an NAICS predictor.
+      - 📓 `industry-sectorization.ipynb` - determines the distribution of companies in the dataset by NAICS.
+      - 📓 `join_with_data_axle.ipynb` - joins census and Data Axle data.
+    * 📁 `history`
+      - 📓 `historical-analysis.ipynb` - Looks to historical census files to determine trends.
+      - 📓 `november-census-analysis.ipynb` - runs some simple EDA on the November 2025 data.
+      - 📓 `october-census-analysis.ipynb` - runs some simple EDA on the October 2025 data.
+  - 📁 `scripts/`
+    - `add_binary_label.py` - binarizes annotated rankings.
+    - `address_lookup.py` - uses Census geocoder to lookup an address.
+    - `calculate_dqs.py` - calculates DQS for a sample of data.
+    - `check_previous_labels.py`
+    - `compare_llm_to_ground_truth.py`
+    - `create_ground_truth.py`
+    - `email_domain_validator.py` - validates an email address with DNS lookup.
+    - `gemini_llm_company_fit.py`
+    - `gemini_llm_validity.py`
+    - `match_addresses_with_data_axle.py` - Uses a naive spatial buffer to try to match addresses and company names with data in Data Axle.
+    - `merge_cargo_carried.py`
+    - `merge_ground_truth_files.py`
+    - `openai_llm_validity.py`
+    - `preprocess.py` - a subroutine for the Streamlit app that updates the data. See more in the `moacir-clean-up` branch.
+    - `sample_from_census.py`
+    - `scrape_safer_company_snapshot_data.py`
