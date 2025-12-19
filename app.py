@@ -126,6 +126,9 @@ def load_data(path: str) -> pd.DataFrame:
         # Fallback: if ml_score is missing, keep the column so downstream code doesn't break
         df["company_fit_score"] = np.nan
 
+    if "phy_zip" in df.columns:
+        df["zcta"] = df["phy_zip"].str.slice(0, 5)
+
     # Move key identification and contact columns to the front
     display_columns = [
         "dot_number",
@@ -229,7 +232,7 @@ PROSPECT_STATUS_OPTIONS = [
 ]
 
 # ------------------------------------------------------------------
-# GeoJSON loading helpers for county / state maps
+# GeoJSON loading helpers for ZCTA / state maps
 # ------------------------------------------------------------------
 # @st.cache_data
 # def load_zcta_geojson():
@@ -244,51 +247,29 @@ PROSPECT_STATUS_OPTIONS = [
 
 
 @st.cache_data
-def load_county_geojson():
-    """
-    Load the nationwide county GeoJSON from disk.
-
-    This file is expected to contain all U.S. counties with FIPS codes.
-    The result is cached so it is only read once per session.
-    """
-    with open("tl_2024_us_county.geojson") as f:
-        return json.load(f)
-
-
-@st.cache_data
-def state_zctas_geojson(state: str):
+def state_zctas_geojson(state_abbr: str):
     """
     Construct a GeoJSON FeatureCollection containing only the ZCTAs
-    belonging to a single state, identified by
+    belonging to a single state, identified by a state abbr.
 
     This subset is used to draw the ZCTA-level choropleth when a single
     state is selected in the filters.
     """
-    geojson_path = f"data/zctas/zcta_{state}.geojson"
+    geojson_path = f"data/zctas/zcta_{state_abbr}.geojson"
     with open(geojson_path) as f:
         return json.load(f)
 
 
 @st.cache_data
-def load_state_counties_geojson(state_fips: str):
-    """
-    Construct a GeoJSON FeatureCollection containing only the counties
-    belonging to a single state, identified by its 2-digit FIPS code.
-
-    This subset is used to draw the county-level choropleth when a single
-    state is selected in the filters.
-    """
-    full_geojson = load_county_geojson()
-    features = [
-        feat
-        for feat in full_geojson["features"]
-        if feat["properties"].get("STATEFP") == state_fips
-    ]
-    return {"type": "FeatureCollection", "features": features}
-
-
-@st.cache_data
 def get_state_zcta_frame(state_abbr: str) -> pd.DataFrame:
+    """
+    Build a lookup table of ZCTAs for a single state.
+
+    Returns:
+        DataFrame with one row per ZCTA, containing:
+        - zcta: ZIP Code Tabulation Area code
+        - zcta_label: The ZCTA again
+    """
     geojson = state_zctas_geojson(state_abbr.lower())
 
     records = []
@@ -296,37 +277,12 @@ def get_state_zcta_frame(state_abbr: str) -> pd.DataFrame:
         props = feature["properties"]
         records.append(
             {
-                "phy_zip": props["GEOID20"],  # adjust if different
+                "zcta": props["GEOID20"],  # adjust if different
                 "zcta_label": props.get("NAME", props["GEOID20"]),
             }
         )
 
     return pd.DataFrame(records)
-
-
-@st.cache_data
-def get_state_county_lookup(state_fips: str) -> pd.DataFrame:
-    """
-    Build a lookup table of counties for a single state from the county
-    GeoJSON.
-
-    Returns:
-        DataFrame with one row per county, containing:
-        - county_fips: combined state + county FIPS code (GEOID)
-        - county_name: human-readable county name
-    """
-    full_geojson = load_county_geojson()
-    rows = []
-    for feat in full_geojson["features"]:
-        props = feat.get("properties", {})
-        if props.get("STATEFP") == state_fips:
-            rows.append(
-                {
-                    "county_fips": props.get("GEOID"),
-                    "county_name": props.get("NAME"),
-                }
-            )
-    return pd.DataFrame(rows)
 
 
 # ------------------------------------------------------------------
@@ -453,61 +409,6 @@ flag_label_to_col = {
     "State Government": "state_government",
     "Local Government": "local_government",
     "Indian Tribe": "indian_tribe",
-}
-
-# Mapping from state postal abbreviations to 2-digit FIPS codes for county maps
-STATE_ABBR_TO_FIPS = {
-    "AL": "01",
-    "AK": "02",
-    "AZ": "04",
-    "AR": "05",
-    "CA": "06",
-    "CO": "08",
-    "CT": "09",
-    "DE": "10",
-    "DC": "11",
-    "FL": "12",
-    "GA": "13",
-    "HI": "15",
-    "ID": "16",
-    "IL": "17",
-    "IN": "18",
-    "IA": "19",
-    "KS": "20",
-    "KY": "21",
-    "LA": "22",
-    "ME": "23",
-    "MD": "24",
-    "MA": "25",
-    "MI": "26",
-    "MN": "27",
-    "MS": "28",
-    "MO": "29",
-    "MT": "30",
-    "NE": "31",
-    "NV": "32",
-    "NH": "33",
-    "NJ": "34",
-    "NM": "35",
-    "NY": "36",
-    "NC": "37",
-    "ND": "38",
-    "OH": "39",
-    "OK": "40",
-    "OR": "41",
-    "PA": "42",
-    "RI": "44",
-    "SC": "45",
-    "SD": "46",
-    "TN": "47",
-    "TX": "48",
-    "UT": "49",
-    "VT": "50",
-    "VA": "51",
-    "WA": "53",
-    "WV": "54",
-    "WI": "55",
-    "WY": "56",
 }
 
 # Column names reused in several sections to avoid hard-coding
@@ -793,7 +694,7 @@ if "phy_state" in df.columns:
         ss["west_of_mississippi"] = False
         ss["exclude_ak_hi_ny_nj"] = False
         ss["verified_addresses_only"] = False
-        ss["county_filter"] = []
+        ss["zcta_filter"] = []
 
         # Fleet size filters
         if mileage_col in df.columns:
@@ -908,14 +809,14 @@ if "phy_state" in df.columns:
             "Physical State",
             options=states,
             key="phy_state_selection",
-            help="Select one or multiple states. Selecting one state will show a county breakdown.",
+            help="Select one or multiple states. Selecting one state will show a ZCTA breakdown.",
         )
 
         selected_zips: list[str] = []
-        if selected_states and len(selected_states) == 1 and "phy_zip" in df.columns:
+        if selected_states and len(selected_states) == 1 and "zcta" in df.columns:
             state_for_zips = selected_states[0]
             available_zips = (
-                df.loc[df["phy_state"] == state_for_zips, "phy_zip"]
+                df.loc[df["phy_state"] == state_for_zips, "zcta"]
                 .dropna()
                 .sort_values()
                 .unique()
@@ -923,7 +824,7 @@ if "phy_state" in df.columns:
             )
 
             selected_zips = st.multiselect(
-                f"ZCTA (only for {state_for_zips})",
+                f"ZIP Code (only for {state_for_zips})",
                 options=available_zips,
                 key="zcta_filter",
             )
@@ -938,8 +839,8 @@ if "phy_state" in df.columns:
     if selected_states:
         mask &= df["phy_state"].isin(selected_states)
 
-        if len(selected_states) == 1 and selected_zips and "phy_zip" in df.columns:
-            mask &= df["phy_zip"].isin(selected_zips)
+        if len(selected_states) == 1 and selected_zips and "zcta" in df.columns:
+            mask &= df["zcta"].isin(selected_zips)
             state_msg_parts.append(f"{selected_states[0]} ({', '.join(selected_zips)})")
         else:
             state_msg_parts.append(", ".join(selected_states))
@@ -1570,7 +1471,7 @@ else:
 # ----------------------------------------------------------------------
 # KPI strip (high-level metrics for current filtered set)
 # ----------------------------------------------------------------------
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+kpi1, kpi2, kpi3 = st.columns(3)
 
 with kpi1:
     st.metric("Companies (filtered)", f"{len(filtered_df):,}")
@@ -1592,11 +1493,6 @@ with kpi3:
             s_ins_filtered = s_ins.loc[filtered_df.index]
             pct_ins = s_ins_filtered.notna().mean() * 100
             st.metric("% with Insurance History", f"{pct_ins:.1f}%")
-
-with kpi4:
-    if "match_status" in filtered_df.columns and len(filtered_df) > 0:
-        pct_verified = (filtered_df["match_status"] == "Match").mean() * 100
-        st.metric("% Verified Addresses", f"{pct_verified:.1f}%")
 
 # ----------------------------------------------------------------------
 # Concise active filter summary (key filters)
@@ -1657,30 +1553,6 @@ if "phy_state" in df.columns:
             np.nan,
         )
 
-    # Compute percentage of companies with verified addresses per state
-    if "CompanyCount" in state_agg.columns and "match_status" in source_for_map.columns:
-        verified_counts = (
-            (source_for_map["match_status"] == "Match")
-            .groupby(source_for_map["phy_state"])
-            .sum()
-            .rename("VerifiedCount")
-        )
-
-        state_agg = state_agg.merge(
-            verified_counts,
-            left_on="State",
-            right_index=True,
-            how="left",
-        )
-
-        state_agg["VerifiedCount"] = state_agg["VerifiedCount"].fillna(0.0)
-
-        state_agg["VerifiedPct"] = np.where(
-            state_agg["CompanyCount"] > 0,
-            state_agg["VerifiedCount"] / state_agg["CompanyCount"] * 100.0,
-            np.nan,
-        )
-
     # Define which metrics the user can visualize on the map/bar chart
     metric_options = {
         "Company Count": ("CompanyCount", "Companies"),
@@ -1719,11 +1591,6 @@ if "phy_state" in df.columns:
         metric_options["Percent with Insurance History"] = (
             "InsurancePct",
             "% with Insurance History",
-        )
-    if "VerifiedPct" in state_agg.columns:
-        metric_options["Percent with Verified Addresses"] = (
-            "VerifiedPct",
-            "% Verified Addresses",
         )
 
     # ------------------------------------------------------------------
@@ -1881,288 +1748,255 @@ if "phy_state" in df.columns:
             st.plotly_chart(fig, use_container_width=True)
 
     # ------------------------------------------------------------------
-    # RIGHT COLUMN: County view (single state) or Top 10 states bar chart
+    # RIGHT COLUMN: ZCTA view (single state) or Top 10 states bar chart
     # ------------------------------------------------------------------
     with col_map_right:
         unique_states = source_for_map["phy_state"].dropna().unique()
 
         # When exactly one state is selected, show a ZCTA-level map
-        if len(unique_states) == 1 and "phy_zip" in source_for_map.columns:
+        if len(unique_states) == 1 and "zcta" in source_for_map.columns:
             state_abbr = unique_states[0]
 
-            st.subheader(f"ZCTA Metrics – {state_abbr}")
+            st.subheader(f"ZCTA (ZIP Code) Metrics – {state_abbr}")
 
             if not state_abbr:
                 st.info("No ZCTA mapping available for this state.")
             else:
-                if metric_col == "VerifiedPct":
-                    # In this special case, county-level verified percentages
-                    # can be misleading and are explained in text instead.
-                    st.markdown(
-                        "<div style='height:330px'></div>", unsafe_allow_html=True
-                    )
+                # Add a spacer so the county map lines up visually with the
+                # national map
+                st.markdown("<div style='height:120px'></div>", unsafe_allow_html=True)
 
-                    missing_zcta_rows = source_for_map[
-                        (source_for_map["phy_state"] == state_abbr)
-                        & source_for_map["phy_zip"].isna()
-                    ]
+                state_df = source_for_map[
+                    (source_for_map["phy_state"] == state_abbr)
+                    & (source_for_map["zcta"].notna())
+                ]
 
-                    st.caption(
-                        f"County-level % Verified is not shown because it provides little additional insight. "
-                        f"It can only be calculated for companies in {state_abbr} that have both a verified "
-                        f"address and a known county. {len(missing_zcta_rows):,} companies in {state_abbr} "
-                        f"lack county information and would be excluded, which makes all counties "
-                        f"be 100% verified even when the statewide percentage is lower."
-                    )
-
+                base_zctas = get_state_zcta_frame(state_abbr)
+                if base_zctas.empty:
+                    st.info("No ZCTA shapes found for this state.")
                 else:
-                    # Add a spacer so the county map lines up visually with the national map
-                    st.markdown(
-                        "<div style='height:120px'></div>", unsafe_allow_html=True
+                    zcta_counts = base_zctas.copy()
+                    metric_series = None
+
+                    # Aggregate the selected metric at the county level
+                    if not state_df.empty:
+                        by_zcta = state_df.groupby("zcta")
+
+                        if metric_col == "CompanyCount":
+                            metric_series = by_zcta["zcta"].size().rename("MetricValue")
+                        elif (
+                            metric_col == "avg_company_fit_score"
+                            and "company_fit_score" in state_df.columns
+                        ):
+                            metric_series = (
+                                by_zcta["company_fit_score"]
+                                .mean()
+                                .rename("MetricValue")
+                            )
+
+                        elif (
+                            metric_col == "avg_recent_mileage"
+                            and "recent_mileage" in state_df.columns
+                        ):
+                            metric_series = (
+                                by_zcta["recent_mileage"].mean().rename("MetricValue")
+                            )
+
+                        elif (
+                            metric_col == "avg_drivers"
+                            and "driver_total" in state_df.columns
+                        ):
+                            metric_series = (
+                                by_zcta["driver_total"].mean().rename("MetricValue")
+                            )
+
+                        elif (
+                            metric_col == "avg_power_units"
+                            and "nbr_power_unit" in state_df.columns
+                        ):
+                            metric_series = (
+                                by_zcta["nbr_power_unit"].mean().rename("MetricValue")
+                            )
+
+                        elif (
+                            metric_col == "InsuranceCount"
+                            and "num_filings" in state_df.columns
+                        ):
+                            metric_series = (
+                                by_zcta["num_filings"]
+                                .apply(lambda s: s.notna().sum())
+                                .rename("MetricValue")
+                            )
+
+                        elif (
+                            metric_col == "InsurancePct"
+                            and "num_filings" in state_df.columns
+                        ):
+                            counts = by_zcta["zcta"].size()
+                            ins_counts = by_zcta["num_filings"].apply(
+                                lambda s: s.notna().sum()
+                            )
+                            pct = np.where(
+                                counts > 0,
+                                ins_counts / counts * 100.0,
+                                np.nan,
+                            )
+                            metric_series = pd.Series(
+                                pct,
+                                index=counts.index,
+                                name="MetricValue",
+                            )
+
+                        elif metric_col == "avg_dqs" and "dqs" in state_df.columns:
+                            metric_series = by_zcta["dqs"].mean().rename("MetricValue")
+
+                    # Attach metric values (if any) to the full list of counties
+                    if metric_series is not None:
+                        metric_df = metric_series.reset_index()
+                        # .rename(
+                        #     columns={"county_fips": "county_fips"}
+                        # )
+                        zcta_counts = zcta_counts.merge(
+                            metric_df,
+                            on="zcta",
+                            how="left",
+                        )
+                    else:
+                        # No metric for this selection -> start with all NaN
+                        zcta_counts["MetricValue"] = np.nan
+
+                    # Determine which counties are explicitly excluded by the
+                    # geography filters (county multiselect). If no counties
+                    # are selected, all counties in the state are considered
+                    # geo-allowed.
+                    if selected_zips:
+                        allowed = set(selected_zips)
+                        zcta_counts["geo_allowed"] = zcta_counts["zcta"].isin(allowed)
+                    else:
+                        zcta_counts["geo_allowed"] = True
+
+                    # Metric used for coloring:
+                    # - ZCTAS that are still allowed by the geographic
+                    # filters
+                    #   but have no remaining companies get a value of 0 so they
+                    #   appear in the normal color scale.
+                    # - ZCTAs that are geo-filtered-out get NaN and are
+                    # drawn
+                    #   in gray.
+                    zcta_counts["MetricForMap"] = np.where(
+                        zcta_counts["geo_allowed"],
+                        zcta_counts["MetricValue"],
+                        np.nan,
                     )
 
-                    state_df = source_for_map[
-                        (source_for_map["phy_state"] == state_abbr)
-                        & (source_for_map["phy_zip"].notna())
-                    ]
+                    zcta_counts.loc[
+                        zcta_counts["geo_allowed"] & zcta_counts["MetricForMap"].isna(),
+                        "MetricForMap",
+                    ] = 0.0
 
-                    base_zctas = get_state_zcta_frame(state_abbr)
-                    if base_zctas.empty:
-                        st.info("No ZCTA shapes found for this state.")
+                    # Build human-readable hover text
+                    def _format_zcta_hover(row):
+                        if not row["geo_allowed"]:
+                            return "Filtered Out"
+                        val = row["MetricForMap"]
+                        if metric_col in ["CompanyCount", "InsuranceCount"]:
+                            return f"{metric_title}: {val:,.0f}"
+                        else:
+                            return f"{metric_title}: {val:,.2f}"
+
+                    zcta_counts["HoverText"] = zcta_counts.apply(
+                        _format_zcta_hover,
+                        axis=1,
+                    )
+
+                    inactive_df = zcta_counts[~zcta_counts["geo_allowed"]]
+                    active_df = zcta_counts[zcta_counts["geo_allowed"]]
+
+                    zcta_geojson = state_zctas_geojson(state_abbr)
+
+                    fig_zcta = go.Figure()
+
+                    # ------------------------------------------------------
+                    # Base layer: counties with no data after filters
+                    # (light gray, thin border, "Filtered Out" hover)
+                    # ------------------------------------------------------
+                    if not inactive_df.empty:
+                        fig_zcta.add_trace(
+                            go.Choropleth(
+                                geojson=zcta_geojson,
+                                locations=inactive_df["zcta"],
+                                featureidkey="properties.GEOID20",
+                                z=[0] * len(inactive_df),
+                                colorscale=[[0, "#e0e0e0"], [1, "#e0e0e0"]],
+                                showscale=False,
+                                customdata=inactive_df[["zcta"]].to_numpy(),
+                                hovertemplate=(
+                                    "%{customdata[0]}<br>Filtered Out<extra></extra>"
+                                ),
+                                marker=dict(
+                                    line=dict(
+                                        color="rgba(120,120,120,0.5)",
+                                        width=0.5,
+                                    )
+                                ),
+                            )
+                        )
+
+                    # ------------------------------------------------------
+                    # Top layer: counties that remain after filters
+                    # (Blues scale, darker border, metric value in hover)
+                    # ------------------------------------------------------
+                    if not active_df.empty:
+                        active_z = active_df["MetricForMap"].astype(float)
+
+                        fig_zcta.add_trace(
+                            go.Choropleth(
+                                geojson=zcta_geojson,
+                                locations=active_df["zcta"],
+                                featureidkey="properties.GEOID20",
+                                z=active_z,
+                                colorscale="Blues",
+                                colorbar=dict(
+                                    title=metric_title,
+                                    x=1.01,
+                                    y=0.5,
+                                    len=0.8,
+                                    thickness=12,
+                                ),
+                                customdata=active_df[["zcta"]].to_numpy(),
+                                text=active_df["HoverText"],
+                                hovertemplate=(
+                                    "%{customdata[0]}<br>%{text}<extra></extra>"
+                                ),
+                                marker=dict(
+                                    line=dict(
+                                        color="rgba(100, 100, 100, 0.6)", width=0.25
+                                    ),
+                                ),
+                            )
+                        )
+
+                        # Match numeric formatting with the state-level map
+                        if metric_col in ["CompanyCount", "InsuranceCount"]:
+                            fig_zcta.data[-1].colorbar.tickformat = ",d"
+                        else:
+                            fig_zcta.data[-1].colorbar.tickformat = ",.2f"
+
+                    # Shared layout for county map
+                    fig_zcta.update_geos(
+                        fitbounds="locations",
+                        visible=False,
+                    )
+
+                    fig_zcta.update_layout(
+                        height=420,
+                        margin=dict(l=0, r=0, t=10, b=0),
+                    )
+
+                    if active_df.empty and inactive_df.empty:
+                        st.info("No ZCTA data available for current filters.")
                     else:
-                        zcta_counts = base_zctas.copy()
-                        metric_series = None
-
-                        # Aggregate the selected metric at the county level
-                        if not state_df.empty:
-                            by_zcta = state_df.groupby("phy_zip")
-
-                            if metric_col == "CompanyCount":
-                                metric_series = (
-                                    by_zcta["phy_zip"].size().rename("MetricValue")
-                                )
-                            elif (
-                                metric_col == "avg_company_fit_score"
-                                and "company_fit_score" in state_df.columns
-                            ):
-                                metric_series = (
-                                    by_zcta["company_fit_score"]
-                                    .mean()
-                                    .rename("MetricValue")
-                                )
-
-                            elif (
-                                metric_col == "avg_recent_mileage"
-                                and "recent_mileage" in state_df.columns
-                            ):
-                                metric_series = (
-                                    by_zcta["recent_mileage"]
-                                    .mean()
-                                    .rename("MetricValue")
-                                )
-
-                            elif (
-                                metric_col == "avg_drivers"
-                                and "driver_total" in state_df.columns
-                            ):
-                                metric_series = (
-                                    by_zcta["driver_total"].mean().rename("MetricValue")
-                                )
-
-                            elif (
-                                metric_col == "avg_power_units"
-                                and "nbr_power_unit" in state_df.columns
-                            ):
-                                metric_series = (
-                                    by_zcta["nbr_power_unit"]
-                                    .mean()
-                                    .rename("MetricValue")
-                                )
-
-                            elif (
-                                metric_col == "InsuranceCount"
-                                and "num_filings" in state_df.columns
-                            ):
-                                metric_series = (
-                                    by_zcta["num_filings"]
-                                    .apply(lambda s: s.notna().sum())
-                                    .rename("MetricValue")
-                                )
-
-                            elif (
-                                metric_col == "InsurancePct"
-                                and "num_filings" in state_df.columns
-                            ):
-                                counts = by_zcta["phy_zip"].size()
-                                ins_counts = by_zcta["num_filings"].apply(
-                                    lambda s: s.notna().sum()
-                                )
-                                pct = np.where(
-                                    counts > 0,
-                                    ins_counts / counts * 100.0,
-                                    np.nan,
-                                )
-                                metric_series = pd.Series(
-                                    pct,
-                                    index=counts.index,
-                                    name="MetricValue",
-                                )
-
-                            elif metric_col == "avg_dqs" and "dqs" in state_df.columns:
-                                metric_series = (
-                                    by_zcta["dqs"].mean().rename("MetricValue")
-                                )
-
-                        # Attach metric values (if any) to the full list of counties
-                        if metric_series is not None:
-                            metric_df = metric_series.reset_index()
-                            # .rename(
-                            #     columns={"county_fips": "county_fips"}
-                            # )
-                            zcta_counts = zcta_counts.merge(
-                                metric_df,
-                                on="phy_zip",
-                                how="left",
-                            )
-                        else:
-                            # No metric for this selection -> start with all NaN
-                            zcta_counts["MetricValue"] = np.nan
-
-                        # Determine which counties are explicitly excluded by the
-                        # geography filters (county multiselect). If no counties
-                        # are selected, all counties in the state are considered
-                        # geo-allowed.
-                        if selected_zips:
-                            allowed = set(selected_zips)
-                            zcta_counts["geo_allowed"] = zcta_counts["phy_zip"].isin(
-                                allowed
-                            )
-                        else:
-                            zcta_counts["geo_allowed"] = True
-
-                        # Metric used for coloring:
-                        # - ZCTAS that are still allowed by the geographic
-                        # filters
-                        #   but have no remaining companies get a value of 0 so they
-                        #   appear in the normal color scale.
-                        # - ZCTAs that are geo-filtered-out get NaN and are
-                        # drawn
-                        #   in gray.
-                        zcta_counts["MetricForMap"] = np.where(
-                            zcta_counts["geo_allowed"],
-                            zcta_counts["MetricValue"],
-                            np.nan,
-                        )
-
-                        zcta_counts.loc[
-                            zcta_counts["geo_allowed"]
-                            & zcta_counts["MetricForMap"].isna(),
-                            "MetricForMap",
-                        ] = 0.0
-
-                        # Build human-readable hover text
-                        def _format_zcta_hover(row):
-                            if not row["geo_allowed"]:
-                                return "Filtered Out"
-                            val = row["MetricForMap"]
-                            if metric_col in ["CompanyCount", "InsuranceCount"]:
-                                return f"{metric_title}: {val:,.0f}"
-                            else:
-                                return f"{metric_title}: {val:,.2f}"
-
-                        zcta_counts["HoverText"] = zcta_counts.apply(
-                            _format_zcta_hover,
-                            axis=1,
-                        )
-
-                        inactive_df = zcta_counts[~zcta_counts["geo_allowed"]]
-                        active_df = zcta_counts[zcta_counts["geo_allowed"]]
-
-                        zcta_geojson = state_zctas_geojson(state_abbr)
-
-                        fig_zcta = go.Figure()
-
-                        # ------------------------------------------------------
-                        # Base layer: counties with no data after filters
-                        # (light gray, thin border, "Filtered Out" hover)
-                        # ------------------------------------------------------
-                        if not inactive_df.empty:
-                            fig_zcta.add_trace(
-                                go.Choropleth(
-                                    geojson=zcta_geojson,
-                                    locations=inactive_df["phy_zip"],
-                                    featureidkey="properties.GEOID20",
-                                    z=[0] * len(inactive_df),
-                                    colorscale=[[0, "#e0e0e0"], [1, "#e0e0e0"]],
-                                    showscale=False,
-                                    customdata=inactive_df[["phy_zip"]].to_numpy(),
-                                    hovertemplate=(
-                                        "%{customdata[0]}<br>Filtered Out<extra></extra>"
-                                    ),
-                                    marker=dict(
-                                        line=dict(
-                                            color="rgba(120,120,120,0.5)",
-                                            width=0.5,
-                                        )
-                                    ),
-                                )
-                            )
-
-                        # ------------------------------------------------------
-                        # Top layer: counties that remain after filters
-                        # (Blues scale, darker border, metric value in hover)
-                        # ------------------------------------------------------
-                        if not active_df.empty:
-                            active_z = active_df["MetricForMap"].astype(float)
-
-                            fig_zcta.add_trace(
-                                go.Choropleth(
-                                    geojson=zcta_geojson,
-                                    locations=active_df["phy_zip"],
-                                    featureidkey="properties.GEOID20",
-                                    z=active_z,
-                                    colorscale="Blues",
-                                    colorbar=dict(
-                                        title=metric_title,
-                                        x=1.01,
-                                        y=0.5,
-                                        len=0.8,
-                                        thickness=12,
-                                    ),
-                                    customdata=active_df[["phy_zip"]].to_numpy(),
-                                    text=active_df["HoverText"],
-                                    hovertemplate=(
-                                        "%{customdata[0]}<br>%{text}<extra></extra>"
-                                    ),
-                                    marker=dict(
-                                        line=dict(
-                                            color="rgba(100, 100, 100, 0.6)", width=0.25
-                                        ),
-                                    ),
-                                )
-                            )
-
-                            # Match numeric formatting with the state-level map
-                            if metric_col in ["CompanyCount", "InsuranceCount"]:
-                                fig_zcta.data[-1].colorbar.tickformat = ",d"
-                            else:
-                                fig_zcta.data[-1].colorbar.tickformat = ",.2f"
-
-                        # Shared layout for county map
-                        fig_zcta.update_geos(
-                            fitbounds="locations",
-                            visible=False,
-                        )
-
-                        fig_zcta.update_layout(
-                            height=420,
-                            margin=dict(l=0, r=0, t=10, b=0),
-                        )
-
-                        if active_df.empty and inactive_df.empty:
-                            st.info("No ZCTA data available for current filters.")
-                        else:
-                            st.plotly_chart(fig_zcta, use_container_width=True)
+                        st.plotly_chart(fig_zcta, use_container_width=True)
 
         # If multiple states are selected, show a Top 10 bar chart instead
         else:
